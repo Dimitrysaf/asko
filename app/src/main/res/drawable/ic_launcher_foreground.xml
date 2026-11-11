@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dumbbell, drawn inside the 66dp adaptive-icon safe zone. Also used as the themed (monochrome) icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF1B5E20"
+        android:pathData="M37,51h34v6h-34z M30,38h7v32h-7z M71,38h7v32h-7z M24,44h6v20h-6z M78,44h6v20h-6z" />
+</vector>

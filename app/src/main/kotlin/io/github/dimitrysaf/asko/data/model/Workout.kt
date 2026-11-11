@@ -1,0 +1,25 @@
+package io.github.dimitrysaf.asko.data.model
+
+import java.time.Duration
+import java.time.Instant
+
+/**
+ * A workout that was done: when, and its exercises with the sets as they were done. Exercises and
+ * sets have the same shape as a routine's ([RoutineExercise], [PlannedSet]), so logging is the
+ * routine editor filled in with what you did.
+ */
+data class Workout(
+    val id: Long,
+    val startedAt: Instant,
+    /** Null while the workout is still in progress. */
+    val endedAt: Instant?,
+    val note: String?,
+    /** The routine it was done from, as named then; null when logged without one. */
+    val routineName: String?,
+    val exercises: List<RoutineExercise>,
+) {
+    /** How long it took; null when unknown (in progress, or logged afterwards without a duration). */
+    val duration: Duration? get() = endedAt?.let { Duration.between(startedAt, it) }?.takeUnless { it.isZero }
+
+    val setCount: Int get() = exercises.sumOf { it.sets.size }
+}

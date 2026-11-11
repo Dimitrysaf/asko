@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The exercise library and its animations come from ExerciseDB. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A buzz when the rest between sets is over. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The ongoing workout notification: the rest counting down, buzzing when it's over. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:name=".AskoApplication"
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Asko">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Keeps a workout's rest timer going while the app is in the background. -->
+        <service
+            android:name=".lib.notify.WorkoutService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Workout in progress: rest timer counting down between sets" />
+        </service>
+
+        <receiver
+            android:name=".lib.notify.WorkoutActionReceiver"
+            android:exported="false" />
+    </application>
+</manifest>
