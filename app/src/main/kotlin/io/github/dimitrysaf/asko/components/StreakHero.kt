@@ -59,10 +59,7 @@ fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier) {
         // the fire's orange, slower than when loading.
         Box(
             if (alive) {
-                Modifier.shimmer(
-                    colors = listOf(MaterialTheme.colorScheme.primary.copy(alpha = SHIMMER_ALPHA), dayMarkColor(DayMark.WORKOUT).copy(alpha = SHIMMER_ALPHA)),
-                    durationMillis = SKELETON_SWEEP_MS * SHIMMER_SLOWDOWN,
-                )
+                Modifier.celebrationShimmer()
             } else {
                 Modifier
             },
@@ -83,7 +80,7 @@ fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier) {
                     val shown = count.value.toInt()
                     Text(pluralStringResource(R.plurals.streak_days, shown, shown), style = MaterialTheme.typography.titleMedium)
                     AnimatedContent(
-                        targetState = message(streak.current, doneToday, workedToday),
+                        targetState = message(streak.current, doneToday, workedToday, restToday = streak.isRestDay(today)),
                         transitionSpec = { fadeIn(tween(FADE_MS)) togetherWith fadeOut(tween(FADE_MS)) },
                         label = "streak message",
                     ) { text ->
@@ -99,6 +96,19 @@ fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * A celebrating item's background: the loading skeleton's shimmer, faint, in [first] then
+ * [second], three times slower. The streak's is the theme's blue and the fire's orange.
+ */
+@Composable
+fun Modifier.celebrationShimmer(
+    first: Color = MaterialTheme.colorScheme.primary,
+    second: Color = dayMarkColor(DayMark.WORKOUT),
+): Modifier = shimmer(
+    colors = listOf(first.copy(alpha = SHIMMER_ALPHA), second.copy(alpha = SHIMMER_ALPHA)),
+    durationMillis = SKELETON_SWEEP_MS * SHIMMER_SLOWDOWN,
+)
 
 /**
  * The fire: flickering (a gentle pulse and sway) while the streak is alive, bigger with a glow
@@ -157,14 +167,19 @@ private fun Flame(alive: Boolean, lit: Boolean) {
     }
 }
 
-/** A line to keep going: start one, keep it alive today, or well done for today. */
+/**
+ * A line to keep going: start one, keep it alive today, or well done for today. On a rest day
+ * ([restToday]) it says so: resting keeps the streak going, and a workout anyway is a bonus.
+ */
 @Composable
-private fun message(current: Int, doneToday: Boolean, workedToday: Boolean): String = when {
+private fun message(current: Int, doneToday: Boolean, workedToday: Boolean, restToday: Boolean): String = when {
+    restToday && workedToday -> stringResource(R.string.streak_msg_rest_worked)
+    restToday && current == 0 -> stringResource(R.string.streak_msg_rest_no_streak)
+    restToday -> stringResource(R.string.streak_msg_rest)
     current == 0 -> stringResource(R.string.streak_msg_start)
     doneToday && workedToday && current >= 7 && current % 7 == 0 ->
         pluralStringResource(R.plurals.streak_msg_weeks, current / 7, current / 7)
     doneToday && workedToday -> stringResource(R.string.streak_msg_done)
-    doneToday -> stringResource(R.string.streak_msg_rest)
     else -> stringResource(R.string.streak_msg_keep_alive)
 }
 

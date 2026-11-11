@@ -80,6 +80,7 @@ fun SettingsPage(onBack: () -> Unit) {
     val defaultRest by settings.defaultRestSeconds.collectAsStateWithLifecycle()
     val buzz by settings.restBuzz.collectAsStateWithLifecycle()
     val keepScreenOn by settings.keepScreenOn.collectAsStateWithLifecycle()
+    val editableRows by settings.editableWorkoutRows.collectAsStateWithLifecycle()
     var choosingRest by rememberSaveable { mutableStateOf(false) }
     var restoreFrom by rememberSaveable { mutableStateOf<String?>(null) }
     val resolver = LocalContext.current.contentResolver
@@ -121,7 +122,7 @@ fun SettingsPage(onBack: () -> Unit) {
                 Section(stringResource(R.string.settings_workouts)) {
                     SegmentedListItem(
                         onClick = { choosingRest = true },
-                        shapes = segmentedShapes(0, 3),
+                        shapes = segmentedShapes(0, 4),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_default_rest_hint)) },
                         trailingContent = { Text(restLabel(defaultRest), style = MaterialTheme.typography.labelLarge) },
@@ -130,7 +131,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         checked = buzz,
                         onCheckedChange = settings::setRestBuzz,
-                        shapes = segmentedShapes(1, 3),
+                        shapes = segmentedShapes(1, 4),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_buzz_hint)) },
                         trailingContent = { Switch(checked = buzz, onCheckedChange = null) },
@@ -139,11 +140,20 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         checked = keepScreenOn,
                         onCheckedChange = settings::setKeepScreenOn,
-                        shapes = segmentedShapes(2, 3),
+                        shapes = segmentedShapes(2, 4),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_keep_screen_on_hint)) },
                         trailingContent = { Switch(checked = keepScreenOn, onCheckedChange = null) },
                         content = { Text(stringResource(R.string.settings_keep_screen_on)) },
+                    )
+                    SegmentedListItem(
+                        checked = editableRows,
+                        onCheckedChange = settings::setEditableWorkoutRows,
+                        shapes = segmentedShapes(3, 4),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_editable_rows_hint)) },
+                        trailingContent = { Switch(checked = editableRows, onCheckedChange = null) },
+                        content = { Text(stringResource(R.string.settings_editable_rows)) },
                     )
                 }
             }

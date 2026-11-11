@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.pages.routines.PreviewCell
+import io.github.dimitrysaf.asko.pages.routines.PreviewColumns
+import io.github.dimitrysaf.asko.pages.routines.previewColumns
+import io.github.dimitrysaf.asko.pages.routines.weightText
 import io.github.dimitrysaf.asko.components.ExerciseDemo
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
@@ -172,6 +176,7 @@ fun ActiveWorkoutPage(
     BackHandler { confirmingExit = true }
     val settings = (LocalContext.current.applicationContext as AskoApplication).container.settings
     val keepScreenOn by settings.keepScreenOn.collectAsStateWithLifecycle()
+    val editableRows by settings.editableWorkoutRows.collectAsStateWithLifecycle()
     val buzz by settings.restBuzz.collectAsStateWithLifecycle()
     if (keepScreenOn) KeepScreenOn()
     VibrateOnAlerts(viewModel, enabled = buzz)
@@ -258,7 +263,7 @@ fun ActiveWorkoutPage(
                                 }
                             }
                             item(key = "media") { ExerciseMedia(details, exercise.key) }
-                            item(key = "sets") { SetList(viewModel, exercise, details?.isBodyweight == true) }
+                            item(key = "sets") { SetList(viewModel, exercise, details?.isBodyweight == true, editable = editableRows) }
                         }
                     }
                 }
@@ -693,15 +698,18 @@ private val ClockWavelength = 40.dp
 
 /**
  * The current exercise's sets: badge (tap for the ways to log it) · reps or time · weight.
- * Values start as planned and can be changed; the current set is highlighted (tap a row to make it
- * current). Logged sets are grayed with ✓ (✕ when failed) over the middle; skipped ones are grayed.
+ * Read-only by default, like the routine preview (values only, an empty column left out): change a
+ * set through its badge's sheet. With Settings' editable rows ([editable]), the values are fields
+ * to type into. The current set is highlighted (tap a row to make it current). Logged sets are grayed with ✓ (✕ when failed) over the middle; skipped ones are grayed.
  * While a timed set's clock runs, its row's background drains with the time and its time counts
  * down.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise, bodyweight: Boolean) {
+private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise, bodyweight: Boolean, editable: Boolean) {
     val numbers = exercise.sets.map { it.target }.setNumbers()
+    // Read-only, a column no set has a value in is left out (as in the routine preview).
+    val columns = if (editable) PreviewColumns() else previewColumns(exercise.sets.map { it.actual }, exercise.timed)
     var sheetFor by remember { mutableStateOf<Int?>(null) }
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
@@ -711,8 +719,9 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
             horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS),
         ) {
             ColumnLabel(stringResource(R.string.routine_col_set), Modifier.width(SetColumnWidth))
-            ColumnLabel(stringResource(if (exercise.timed) R.string.routine_col_time else R.string.routine_col_reps), Modifier.weight(1f))
-            ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
+            if (columns.reps) ColumnLabel(stringResource(if (exercise.timed) R.string.routine_col_time else R.string.routine_col_reps), Modifier.weight(1f))
+            if (columns.weight) ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
+            if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
         }
         exercise.sets.forEachIndexed { i, set ->
             val current = i == viewModel.setIndex
@@ -746,13 +755,22 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
                     ) {
                         SetBadge(set.target.type, numbers[i], onClick = { sheetFor = set.key })
                         val cell = Modifier.weight(1f)
-                        if (exercise.timed) {
-                            val seconds = hold?.let { ceil(it.remainingMs / 1000.0).toInt() } ?: set.actual.durationSeconds
-                            TimeField(seconds, { viewModel.setDuration(exercise.key, set.key, it) }, cell)
+                        val seconds = hold?.let { ceil(it.remainingMs / 1000.0).toInt() } ?: set.actual.durationSeconds
+                        if (editable) {
+                            if (exercise.timed) {
+                                TimeField(seconds, { viewModel.setDuration(exercise.key, set.key, it) }, cell)
+                            } else {
+                                WholeNumberField(set.actual.reps?.toString().orEmpty(), { viewModel.setReps(exercise.key, set.key, it.toIntOrNull()) }, cell)
+                            }
+                            WeightField(set.actual.weightKg, bodyweight, { viewModel.setWeight(exercise.key, set.key, it) }, Modifier.weight(1f))
                         } else {
-                            WholeNumberField(set.actual.reps?.toString().orEmpty(), { viewModel.setReps(exercise.key, set.key, it.toIntOrNull()) }, cell)
+                            // Values only, as in the routine preview (blank when empty).
+                            if (columns.reps) {
+                                PreviewCell(if (exercise.timed) seconds?.let(::formatSeconds).orEmpty() else set.actual.reps?.toString().orEmpty(), cell)
+                            }
+                            if (columns.weight) PreviewCell(weightText(set.actual.weightKg, bodyweight), Modifier.weight(1f))
+                            if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
                         }
-                        WeightField(set.actual.weightKg, bodyweight, { viewModel.setWeight(exercise.key, set.key, it) }, Modifier.weight(1f))
                     }
                     when (set.status) {
                         SetStatus.DONE -> Icon(

@@ -96,6 +96,16 @@ class SettingsRepository(context: Context) {
         _streakAskedThrough.value = day
     }
 
+    private val _editableWorkoutRows = MutableStateFlow(prefs.getBoolean(EDITABLE_WORKOUT_ROWS, false))
+
+    /** Now Exercising's set rows are fields to type into (off: read-only, changed through each set's sheet). */
+    val editableWorkoutRows: StateFlow<Boolean> = _editableWorkoutRows.asStateFlow()
+
+    fun setEditableWorkoutRows(on: Boolean) {
+        prefs.edit { putBoolean(EDITABLE_WORKOUT_ROWS, on) }
+        _editableWorkoutRows.value = on
+    }
+
     fun setDefaultRestSeconds(seconds: Int) {
         prefs.edit { putInt(DEFAULT_REST, seconds) }
         _defaultRestSeconds.value = seconds
@@ -115,6 +125,7 @@ class SettingsRepository(context: Context) {
         const val DEFAULT_REST = "default_rest_seconds"
         const val REST_BUZZ = "rest_buzz"
         const val KEEP_SCREEN_ON = "keep_screen_on"
+        const val EDITABLE_WORKOUT_ROWS = "editable_workout_rows"
         const val SOURCE_ORDER = "exercise_source_order"
         const val REST_SCHEDULE = "rest_schedule"
         const val STREAK_ASKED_THROUGH = "streak_asked_through"

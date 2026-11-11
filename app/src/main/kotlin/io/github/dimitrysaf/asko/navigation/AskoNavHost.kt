@@ -135,6 +135,7 @@ fun AskoNavHost() {
                         onHistory = { day ->
                             switchRoot(HistoryRoute(day.toString()))
                         },
+                        onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
                     )
                 }
                 entry<StatsRoute> {

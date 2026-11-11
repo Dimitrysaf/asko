@@ -44,11 +44,19 @@ class WorkoutService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val first = session.notice.value
+        // Started as a foreground service, it must go to the foreground even when the workout has
+        // already ended (left the screen right after opening it): Android stops the app otherwise.
+        ServiceCompat.startForeground(
+            this,
+            ONGOING_ID,
+            first?.let(::ongoing) ?: ending(),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        )
         if (first == null) {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
-        ServiceCompat.startForeground(this, ONGOING_ID, ongoing(first), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         scope.coroutineContext[Job]?.children?.forEach { it.cancel() }
         scope.launch {
             session.notice.collect { notice ->
@@ -105,6 +113,12 @@ class WorkoutService : Service() {
         }
         return builder.build()
     }
+
+    /** Shown for an instant when the workout ended before the service started (removed at once). */
+    private fun ending(): Notification = NotificationCompat.Builder(this, WORKOUT_CHANNEL)
+        .setSmallIcon(R.drawable.ic_timer)
+        .setSilent(true)
+        .build()
 
     private fun restOver(): Notification = NotificationCompat.Builder(this, REST_OVER_CHANNEL)
         .setSmallIcon(R.drawable.ic_timer)

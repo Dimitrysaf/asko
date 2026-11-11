@@ -219,12 +219,16 @@ class ActiveWorkoutViewModel(
 
     /**
      * Next: the current set is logged as done (unless it already is logged or skipped), then the
-     * exercise's rest starts. Without a rest, a timed next set starts its clock right away.
+     * exercise's rest starts. Without a rest, a timed next set starts its clock right away. Moving
+     * from a set already done to another already done (going forward again after going back)
+     * just moves: no rest.
      */
     fun next() {
         val exercise = currentExercise ?: return
         val set = currentSet ?: return
         val running = countdown
+        // Already logged before this Next (you went back to it with Previous).
+        val wasLogged = set.status != SetStatus.PENDING
         if (set.status == SetStatus.PENDING) {
             val held = if (running?.kind == CountdownKind.SET) ((running.totalMs - running.remainingMs) / 1000).toInt() else null
             updateSet(exercise.key, set.key) {
@@ -240,6 +244,8 @@ class ActiveWorkoutViewModel(
         if (!advance()) return
         restWithinExercise = exerciseIndex == from
         paused = false
+        // Going forward again over sets already done (after going back): just move, no rest.
+        if (wasLogged && currentSet?.status != SetStatus.PENDING) return
         // Within a superset's round, straight on to the next exercise; after it, the round's rest.
         val roundGoesOn = exerciseIndex in run && exerciseIndex > from
         val rest = if (roundGoesOn) 0 else items[run.last].restSeconds
@@ -284,7 +290,8 @@ class ActiveWorkoutViewModel(
 
     /**
      * Done / Undone: marks the current set done (a running clock stops and logs the time held; a
-     * rest ends), or puts a logged one back to do. It doesn't move on; Next does.
+     * rest ends), or puts a logged one back to do (a timed set's time back to the full planned
+     * time). It doesn't move on; Next does.
      */
     fun toggleCurrent() {
         val exercise = currentExercise ?: return
@@ -293,7 +300,13 @@ class ActiveWorkoutViewModel(
         if (countdown?.kind == CountdownKind.REST) countdown = null
         val running = countdown
         when (set.status) {
-            SetStatus.DONE, SetStatus.FAILED -> updateSet(exercise.key, set.key) { it.copy(status = SetStatus.PENDING) }
+            // Undone: a timed set's clock goes back to its full planned time, ready to start again.
+            SetStatus.DONE, SetStatus.FAILED -> updateSet(exercise.key, set.key) {
+                it.copy(
+                    status = SetStatus.PENDING,
+                    actual = if (exercise.timed) it.actual.copy(durationSeconds = it.target.durationSeconds) else it.actual,
+                )
+            }
             else -> {
                 val held = if (running?.kind == CountdownKind.SET) ((running.totalMs - running.remainingMs) / 1000).toInt() else null
                 if (held != null) countdown = null

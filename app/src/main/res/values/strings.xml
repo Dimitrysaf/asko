@@ -251,6 +251,8 @@
     <string name="calculator_remove_title">Remove the %1$s kg plates?</string>
     <string name="calculator_remove_message">One comes off each side.</string>
     <string name="settings_data">Your data</string>
+    <string name="settings_editable_rows">Editable rows in Now Exercising</string>
+    <string name="settings_editable_rows_hint">Type reps, time and weight straight into the set rows. Off: the rows only show them; tap a set\'s badge to change it.</string>
     <string name="settings_sources">Exercise libraries</string>
     <string name="settings_sources_hint">Hold and drag to set the order. An exercise in more than one shows from the highest. Hidden libraries aren\'t browsed or searched; their exercises in your routines still show.</string>
     <string name="source_exercisedb">ExerciseDB</string>
@@ -355,7 +357,9 @@
     <string name="streak_msg_start">Work out today to start a streak!</string>
     <string name="streak_msg_keep_alive">Work out today to keep your streak alive!</string>
     <string name="streak_msg_done">Done for today. Keep it going tomorrow!</string>
-    <string name="streak_msg_rest">Rest day, and it still counts. Back at it tomorrow!</string>
+    <string name="streak_msg_rest">Rest day today: it counts toward your streak. Enjoy it!</string>
+    <string name="streak_msg_rest_no_streak">Rest day today. Start your streak with your next workout!</string>
+    <string name="streak_msg_rest_worked">A workout on your rest day. Extra effort, nice!</string>
     <plurals name="streak_msg_weeks">
         <item quantity="one">A whole week in a row. Keep going!</item>
         <item quantity="other">%d weeks in a row. Keep going!</item>

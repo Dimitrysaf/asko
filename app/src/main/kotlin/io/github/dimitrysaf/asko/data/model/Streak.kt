@@ -50,6 +50,9 @@ class Streak(
         else -> day !in excuses && rest.isRest(day)
     }
 
+    /** The day is one of your rest days (as they were set then). */
+    fun isRestDay(day: LocalDate): Boolean = rest.isRest(day)
+
     /** The day's icon: a workout, a sick or travel day, a rest day, or nothing. */
     fun markOf(day: LocalDate): DayMark? = when {
         day in workoutDays -> DayMark.WORKOUT
