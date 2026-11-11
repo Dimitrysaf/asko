@@ -15,6 +15,10 @@ class NoteRepository(private val dao: NoteDao) {
     fun notes(subject: NoteSubject, id: String): Flow<List<Note>> =
         dao.observe(subject.name, id).map { list -> list.map { it.toModel() } }
 
+    /** The notes of several subjects together: an exercise's versions in each library are one exercise. */
+    fun notes(subject: NoteSubject, ids: List<String>): Flow<List<Note>> =
+        dao.observeAny(subject.name, ids).map { list -> list.map { it.toModel() } }
+
     suspend fun notesNow(subject: NoteSubject, id: String): List<Note> = dao.all(subject.name, id).map { it.toModel() }
 
     /** Trainers' names and gyms written before, for suggestions while typing. */
@@ -26,9 +30,10 @@ class NoteRepository(private val dao: NoteDao) {
         dao.insert(note.copy(id = 0, createdAt = Instant.now(), editedAt = null).toEntity(subject, id))
     }
 
-    /** Saves a changed note, as edited now. */
-    suspend fun edit(subject: NoteSubject, id: String, note: Note) {
-        dao.update(note.copy(editedAt = Instant.now()).toEntity(subject, id))
+    /** Saves a changed note, as edited now (it stays with what it belongs to). */
+    suspend fun edit(note: Note) {
+        val it = note.copy(editedAt = Instant.now()).trimmedToType()
+        dao.updateContent(it.id, it.type.name, it.text, it.editedAt?.toEpochMilli(), it.trainer, it.gym, it.bodyPart, it.painLevel)
     }
 
     suspend fun delete(noteId: Long) = dao.delete(noteId)

@@ -17,6 +17,26 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE subject = :subject AND subjectId = :subjectId ORDER BY createdAtMs, id")
     suspend fun all(subject: String, subjectId: String): List<NoteEntity>
 
+    /** The notes of several subjects at once (an exercise's versions in each library), oldest first. */
+    @Query("SELECT * FROM notes WHERE subject = :subject AND subjectId IN (:subjectIds) ORDER BY createdAtMs, id")
+    fun observeAny(subject: String, subjectIds: List<String>): Flow<List<NoteEntity>>
+
+    /** Changes a note's content; what it belongs to stays. */
+    @Query(
+        "UPDATE notes SET type = :type, text = :text, editedAtMs = :editedAtMs, trainer = :trainer, gym = :gym, " +
+            "bodyPart = :bodyPart, painLevel = :painLevel WHERE id = :id",
+    )
+    suspend fun updateContent(
+        id: Long,
+        type: String,
+        text: String,
+        editedAtMs: Long?,
+        trainer: String?,
+        gym: String?,
+        bodyPart: String?,
+        painLevel: Int?,
+    )
+
     @Query("SELECT * FROM notes WHERE subject = :subject ORDER BY createdAtMs, id")
     suspend fun allOf(subject: String): List<NoteEntity>
 

@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.history
 
+import io.github.dimitrysaf.asko.components.StreakHero
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -63,8 +64,9 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long) -> Unit) {
-    val viewModel = appViewModel { HistoryViewModel(it.workoutRepository, it.exerciseRepository) }
+    val viewModel = appViewModel { HistoryViewModel(it.workoutRepository, it.exerciseRepository, it.streakRepository) }
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val streak by viewModel.streak.collectAsStateWithLifecycle()
 
     PageScaffold(title = stringResource(R.string.nav_history)) { padding ->
         val list = history
@@ -81,13 +83,21 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
             verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
         ) {
             item(key = "calendar") {
-                Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
-                    MonthCalendar(
-                        workoutDays = workoutDays,
-                        selected = selectedDay,
-                        onDayClick = { day -> selectedDay = if (day == selectedDay) null else day },
-                        modifier = Modifier.padding(Dimens.SpaceM),
-                    )
+                // A segmented list: the streak, then the calendar (each day shows its mark).
+                val s = streak
+                val count = if (s != null) 2 else 1
+                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape)
+                    Surface(shape = segmentedShapes(count - 1, count).shape, color = MaterialTheme.colorScheme.surfaceContainer) {
+                        MonthCalendar(
+                            workoutDays = workoutDays,
+                            selected = selectedDay,
+                            onDayClick = { day -> selectedDay = if (day == selectedDay) null else day },
+                            marks = s?.let { it::markOf },
+                            counts = s?.let { st -> { day: LocalDate -> st.counts(day) } },
+                            modifier = Modifier.padding(Dimens.SpaceM),
+                        )
+                    }
                 }
             }
             selectedDay?.let { day ->

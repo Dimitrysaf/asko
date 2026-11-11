@@ -1,5 +1,21 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.platform.LocalConfiguration
+import io.github.dimitrysaf.asko.components.DayMarkIcon
+import io.github.dimitrysaf.asko.data.model.DayMark
+import java.time.format.TextStyle
+import java.time.temporal.WeekFields
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.key
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import io.github.dimitrysaf.asko.data.model.ExerciseSource
+import io.github.dimitrysaf.asko.data.model.SetType
+import io.github.dimitrysaf.asko.data.settings.SettingsRepository
+import io.github.dimitrysaf.asko.pages.routines.SetBadge
+import sh.calvin.reorderable.ReorderableColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.filled.Check
@@ -131,6 +147,16 @@ fun SettingsPage(onBack: () -> Unit) {
                     )
                 }
             }
+            item(key = "streaks") {
+                Section(stringResource(R.string.settings_streaks)) {
+                    RestDays(settings)
+                }
+            }
+            item(key = "sources") {
+                Section(stringResource(R.string.settings_sources)) {
+                    ExerciseSources(settings)
+                }
+            }
             item(key = "data") {
                 Section(stringResource(R.string.settings_data)) {
                     SegmentedListItem(
@@ -203,6 +229,122 @@ fun SettingsPage(onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { restoreFrom = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
+}
+
+/**
+ * Rest days: which weekdays you rest (they count towards the streak). Tap for a sheet to pick
+ * them; changes apply from today on, so streaks already made stay as they were.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RestDays(settings: SettingsRepository) {
+    val schedule by settings.restSchedule.collectAsStateWithLifecycle()
+    var picking by rememberSaveable { mutableStateOf(false) }
+    val locale = LocalConfiguration.current.locales[0]
+    val week = remember(locale) {
+        val first = WeekFields.of(locale).firstDayOfWeek
+        List(7) { first.plus(it.toLong()) }
+    }
+    val current = schedule.current
+    SegmentedListItem(
+        onClick = { picking = true },
+        shapes = segmentedShapes(0, 1),
+        colors = itemColors(),
+        leadingContent = { DayMarkIcon(DayMark.REST, size = 24.dp) },
+        supportingContent = {
+            Text(
+                week.filter { it in current }.joinToString { it.getDisplayName(TextStyle.SHORT, locale) }
+                    .ifEmpty { stringResource(R.string.settings_rest_days_none) },
+            )
+        },
+        content = { Text(stringResource(R.string.settings_rest_days)) },
+    )
+    Text(
+        stringResource(R.string.settings_rest_days_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = Dimens.SpaceM, end = Dimens.SpaceM, top = Dimens.SpaceS),
+    )
+    if (picking) {
+        ModalBottomSheet(onDismissRequest = { picking = false }) {
+            Column(
+                Modifier.padding(start = Dimens.PageGutter, end = Dimens.PageGutter, bottom = Dimens.SpaceL),
+                verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+            ) {
+                Text(
+                    stringResource(R.string.settings_rest_days),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = Dimens.SpaceM),
+                )
+                week.forEachIndexed { index, day ->
+                    val resting = day in current
+                    SegmentedListItem(
+                        checked = resting,
+                        onCheckedChange = { settings.setRestDays(if (it) current + day else current - day) },
+                        shapes = segmentedShapes(index, week.size),
+                        trailingContent = { Checkbox(checked = resting, onCheckedChange = null) },
+                        content = { Text(day.getDisplayName(TextStyle.FULL, locale)) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The exercise libraries in their order (hold and drag one to move it), each with a switch to
+ * show or hide it; the last one shown can't be hidden.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun ExerciseSources(settings: SettingsRepository) {
+    val order by settings.sourceOrder.collectAsStateWithLifecycle()
+    val hidden by settings.hiddenSources.collectAsStateWithLifecycle()
+    val haptics = LocalHapticFeedback.current
+    ReorderableColumn(
+        list = order,
+        onSettle = { from, to -> settings.setSourceOrder(order.toMutableList().apply { add(to, removeAt(from)) }) },
+        onMove = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick) },
+        verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+    ) { index, source, _ ->
+        key(source) {
+            ReorderableItem {
+                val shown = source !in hidden
+                val lastShown = shown && order.count { it !in hidden } == 1
+                SegmentedListItem(
+                    checked = shown,
+                    onCheckedChange = { settings.setSourceHidden(source, hidden = !it) },
+                    enabled = !lastShown,
+                    shapes = segmentedShapes(index, order.size),
+                    colors = itemColors(),
+                    modifier = Modifier.longPressDraggableHandle(
+                        onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                    ),
+                    // Its place in the order: 1 is first.
+                    leadingContent = { SetBadge(SetType.NORMAL, index + 1) },
+                    supportingContent = { Text(stringResource(sourceDescription(source))) },
+                    trailingContent = { Switch(checked = shown, onCheckedChange = null, enabled = !lastShown) },
+                    content = { Text(stringResource(sourceName(source))) },
+                )
+            }
+        }
+    }
+    Text(
+        stringResource(R.string.settings_sources_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = Dimens.SpaceM, end = Dimens.SpaceM, top = Dimens.SpaceS),
+    )
+}
+
+private fun sourceName(source: ExerciseSource) = when (source) {
+    ExerciseSource.EXERCISEDB -> R.string.source_exercisedb
+    ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db
+}
+
+private fun sourceDescription(source: ExerciseSource) = when (source) {
+    ExerciseSource.EXERCISEDB -> R.string.source_exercisedb_desc
+    ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db_desc
 }
 
 /** A titled group of settings, as one segmented list. */

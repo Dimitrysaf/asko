@@ -191,7 +191,7 @@
     <string name="exercise_not_found">Exercise not found</string>
     <string name="exercise_similar">Similar exercises</string>
 
-    <string name="credit_source">Data from ExerciseDB</string>
+    <string name="credit_source">Exercises from ExerciseDB and free-exercise-db</string>
 
     <!-- Workout -->
 
@@ -251,6 +251,12 @@
     <string name="calculator_remove_title">Remove the %1$s kg plates?</string>
     <string name="calculator_remove_message">One comes off each side.</string>
     <string name="settings_data">Your data</string>
+    <string name="settings_sources">Exercise libraries</string>
+    <string name="settings_sources_hint">Hold and drag to set the order. An exercise in more than one shows from the highest. Hidden libraries aren\'t browsed or searched; their exercises in your routines still show.</string>
+    <string name="source_exercisedb">ExerciseDB</string>
+    <string name="source_exercisedb_desc">Animated demos</string>
+    <string name="source_free_exercise_db">free-exercise-db</string>
+    <string name="source_free_exercise_db_desc">Two photos each: start and end position</string>
     <string name="settings_back_up">Back up</string>
     <string name="settings_back_up_hint">Save your routines and history to a file</string>
     <string name="settings_restore">Restore</string>
@@ -333,4 +339,45 @@
     <string name="note_delete">Delete note</string>
     <string name="note_delete_title">Delete this note?</string>
     <string name="note_delete_message">It will be gone for good.</string>
+    <!-- Streaks -->
+    <plurals name="streak_days">
+        <item quantity="one">%d day streak</item>
+        <item quantity="other">%d day streak</item>
+    </plurals>
+    <plurals name="streak_lost_title">
+        <item quantity="one">You lost your %d-day streak</item>
+        <item quantity="other">You lost your %d-day streak</item>
+    </plurals>
+    <plurals name="streak_lost_why">
+        <item quantity="one">You missed a day. Why?</item>
+        <item quantity="other">You missed %d days. Why?</item>
+    </plurals>
+    <string name="streak_msg_start">Work out today to start a streak!</string>
+    <string name="streak_msg_keep_alive">Work out today to keep your streak alive!</string>
+    <string name="streak_msg_done">Done for today. Keep it going tomorrow!</string>
+    <string name="streak_msg_rest">Rest day, and it still counts. Back at it tomorrow!</string>
+    <plurals name="streak_msg_weeks">
+        <item quantity="one">A whole week in a row. Keep going!</item>
+        <item quantity="other">%d weeks in a row. Keep going!</item>
+    </plurals>
+    <string name="streak_fell_ill">Fell ill</string>
+    <plurals name="streak_sick_days">
+        <item quantity="one">I was sick that day</item>
+        <item quantity="other">I was sick for the past %d days</item>
+    </plurals>
+    <string name="streak_travelling">Travelling</string>
+    <plurals name="streak_travel_days">
+        <item quantity="one">I was travelling that day</item>
+        <item quantity="other">I was travelling for the past %d days</item>
+    </plurals>
+    <string name="streak_just_missed">I just missed it</string>
+    <string name="streak_just_missed_hint">The streak starts again</string>
+    <string name="streak_lying_title">Are you lying?</string>
+    <string name="streak_lying_message">Sick and travel days pause your streak instead of ending it.</string>
+    <string name="streak_lying_no">No</string>
+    <string name="streak_lying_yes">Yes</string>
+    <string name="settings_streaks">Streaks</string>
+    <string name="settings_rest_days">Rest days</string>
+    <string name="settings_rest_days_none">None</string>
+    <string name="settings_rest_days_hint">Rest days count towards your streak. Changes apply from today on.</string>
 </resources>

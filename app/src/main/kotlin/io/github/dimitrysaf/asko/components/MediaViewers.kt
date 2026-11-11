@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.components
 
+import io.github.dimitrysaf.asko.data.model.Exercise
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -68,5 +70,15 @@ fun ImageViewer(url: String, contentDescription: String?, onDismiss: () -> Unit)
             onSuccess = { loaded = true },
             modifier = Modifier.sharpenEnlarged(ExerciseDbApi.GIF_SIZE_PX).fillMaxSize(),
         )
+    }
+}
+
+/** An exercise's demo full screen: its animation, or its photos in turn. */
+@Composable
+fun ExerciseDemoViewer(exercise: Exercise, onDismiss: () -> Unit) {
+    if (exercise.animationUrl.isNotEmpty() || exercise.photos.isEmpty()) {
+        ImageViewer(exercise.animationUrl, exercise.name, onDismiss)
+    } else {
+        FullScreenViewer(onDismiss) { ExerciseDemo(exercise, RectangleShape, Modifier.fillMaxSize()) }
     }
 }

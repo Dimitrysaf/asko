@@ -1,14 +1,21 @@
 package io.github.dimitrysaf.asko.lib.di
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import io.github.dimitrysaf.asko.data.settings.SettingsRepository
 import io.github.dimitrysaf.asko.data.backup.BackupRepository
 import io.github.dimitrysaf.asko.lib.notify.WorkoutSession
 import android.content.Context
 import io.github.dimitrysaf.asko.data.catalog.ExerciseCatalog
+import io.github.dimitrysaf.asko.data.exercisedb.ExerciseDbApi
+import io.github.dimitrysaf.asko.data.freeexercisedb.FreeExerciseDbApi
+import io.github.dimitrysaf.asko.data.model.ExerciseSource
 import io.github.dimitrysaf.asko.data.local.AskoDatabase
 import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
 import io.github.dimitrysaf.asko.data.repository.NoteRepository
 import io.github.dimitrysaf.asko.data.repository.RoutineRepository
+import io.github.dimitrysaf.asko.data.repository.StreakRepository
 import io.github.dimitrysaf.asko.data.repository.WorkoutRepository
 import io.github.dimitrysaf.asko.data.session.ActiveWorkoutStore
 import java.io.File
@@ -17,9 +24,26 @@ import java.io.File
 class AppContainer(context: Context) {
     private val database = AskoDatabase.build(context)
 
+    /** Lives as long as the app: what repositories keep cached for every page runs here. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    val settings = SettingsRepository(context)
+
+    /** ExerciseDB and free-exercise-db, each saved on the device; merged as Settings says. */
     val exerciseRepository = ExerciseRepository(
-        ExerciseCatalog(File(context.filesDir, "exercisedb.json")),
+        mapOf(
+            ExerciseSource.EXERCISEDB to ExerciseCatalog(
+                File(context.filesDir, "exercisedb.json"),
+                expectedTotal = ExerciseDbApi.EXPECTED_TOTAL * 2,
+            ) { onProgress -> ExerciseDbApi.fetchExercises(onProgress) },
+            ExerciseSource.FREE_EXERCISE_DB to ExerciseCatalog(
+                File(context.filesDir, "free-exercise-db.json"),
+                expectedTotal = 1,
+            ) { _ -> FreeExerciseDbApi.fetchExercises() },
+        ),
+        settings,
     )
+
 
     init {
         // shortcut: removes the unfiltered library saved by older builds (forcing one fresh sync); drop this once your phone has run it.
@@ -27,13 +51,15 @@ class AppContainer(context: Context) {
     }
     /** Notes on routines, exercises and workouts. */
     val noteRepository = NoteRepository(database.noteDao())
-    val workoutRepository = WorkoutRepository(database.workoutDao(), noteRepository)
-    val routineRepository = RoutineRepository(database.routineDao(), noteRepository)
+    val workoutRepository = WorkoutRepository(database.workoutDao(), noteRepository, appScope)
+    val routineRepository = RoutineRepository(database.routineDao(), noteRepository, appScope)
 
-    val settings = SettingsRepository(context)
+    /** The workout streak, with sick and travel days. */
+    val streakRepository = StreakRepository(workoutRepository, database.dayExcuseDao(), settings, appScope)
+
 
     /** Backing up and restoring routines and history. */
-    val backupRepository = BackupRepository(database, routineRepository, workoutRepository, noteRepository)
+    val backupRepository = BackupRepository(database, routineRepository, workoutRepository, noteRepository, streakRepository)
 
     /** The open workout and its ongoing notification. */
     val workoutSession = WorkoutSession()

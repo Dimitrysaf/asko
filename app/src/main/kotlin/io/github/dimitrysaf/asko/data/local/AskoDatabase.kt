@@ -5,7 +5,9 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import io.github.dimitrysaf.asko.data.local.dao.DayExcuseDao
 import io.github.dimitrysaf.asko.data.local.dao.NoteDao
+import io.github.dimitrysaf.asko.data.local.entity.DayExcuseEntity
 import io.github.dimitrysaf.asko.data.local.dao.RoutineDao
 import io.github.dimitrysaf.asko.data.local.entity.NoteEntity
 import io.github.dimitrysaf.asko.data.local.dao.WorkoutDao
@@ -20,9 +22,9 @@ import io.github.dimitrysaf.asko.data.local.entity.WorkoutSetEntity
     entities = [
         WorkoutEntity::class, WorkoutExerciseEntity::class, WorkoutSetEntity::class,
         RoutineEntity::class, RoutineExerciseEntity::class, RoutineSetEntity::class,
-        NoteEntity::class,
+        NoteEntity::class, DayExcuseEntity::class,
     ],
-    version = 8,
+    version = 9,
     // Room works out each step from the exported schemas (app/schemas), keeping existing data.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), // added routines
@@ -32,6 +34,7 @@ import io.github.dimitrysaf.asko.data.local.entity.WorkoutSetEntity
         AutoMigration(from = 5, to = 6), // the routine a workout was done from
         AutoMigration(from = 6, to = 7), // supersets
         AutoMigration(from = 7, to = 8), // routine order, notes
+        AutoMigration(from = 8, to = 9), // sick and travel days
     ],
 )
 abstract class AskoDatabase : RoomDatabase() {
@@ -40,6 +43,8 @@ abstract class AskoDatabase : RoomDatabase() {
     abstract fun routineDao(): RoutineDao
 
     abstract fun noteDao(): NoteDao
+
+    abstract fun dayExcuseDao(): DayExcuseDao
 
     companion object {
         fun build(context: Context): AskoDatabase =

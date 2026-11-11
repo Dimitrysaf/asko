@@ -9,6 +9,11 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
+import androidx.navigation3.runtime.NavKey
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
@@ -40,18 +45,24 @@ fun AskoNavHost() {
     fun isCurrentTab(destination: TopLevelDestination) = root != null && root::class == destination.route::class
     val goBack: () -> Unit = { backStack.removeLastOrNull() }
 
+    // Which way the pages slide when the tab (the root page) changes: towards the new tab's side.
+    var tabDirection by remember { mutableIntStateOf(1) }
+    fun tabIndex(route: NavKey) = TopLevelDestination.entries.indexOfFirst { it.route::class == route::class }
+    fun switchRoot(route: NavKey) {
+        tabDirection = if (tabIndex(route) >= (root?.let(::tabIndex) ?: 0)) 1 else -1
+        backStack.clear()
+        backStack.add(route)
+    }
+
     NavigationSuiteScaffold(
         navigationSuiteItems = {
             TopLevelDestination.entries.forEach { destination ->
                 item(
                     selected = isCurrentTab(destination),
                     onClick = {
-                        if (!isCurrentTab(destination)) {
-                            backStack.clear()
-                            backStack.add(destination.route)
-                        }
+                        if (!isCurrentTab(destination)) switchRoot(destination.route)
                     },
-                    icon = { Icon(destination.icon, contentDescription = null) },
+                    icon = { Icon(destination.icon(), contentDescription = null) },
                     label = { Text(stringResource(destination.label)) },
                 )
             }
@@ -69,13 +80,22 @@ fun AskoNavHost() {
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator(), // one ViewModel per back-stack entry
             ),
-            predictivePopTransitionSpec = materialPredictivePopTransitionSpec(),
+            // Slides only, quick, no fading: new pages from the right, back to the right (following
+            // the finger with the back gesture), tabs sideways by their order.
+            transitionSpec = {
+                if (targetState.previousEntries.isEmpty()) {
+                    slideTabTransitionSpec<NavKey>(tabDirection).invoke(this)
+                } else {
+                    slidePushTransitionSpec<NavKey>().invoke(this)
+                }
+            },
+            popTransitionSpec = slidePopTransitionSpec(),
+            predictivePopTransitionSpec = slidePredictivePopTransitionSpec(),
             entryProvider = entryProvider {
                 entry<RoutinesRoute> {
                     RoutinesPage(
                         onDayClick = { day ->
-                            backStack.clear()
-                            backStack.add(HistoryRoute(day.toString()))
+                            switchRoot(HistoryRoute(day.toString()))
                         },
                         onLog = { backStack.add(LogWorkoutRoute) },
                         onCreateRoutine = { name -> backStack.add(RoutineEditorRoute(name = name)) },
@@ -113,8 +133,7 @@ fun AskoNavHost() {
                         routineName = key.routineName,
                         onDone = goBack,
                         onHistory = { day ->
-                            backStack.clear()
-                            backStack.add(HistoryRoute(day.toString()))
+                            switchRoot(HistoryRoute(day.toString()))
                         },
                     )
                 }
@@ -144,8 +163,7 @@ fun AskoNavHost() {
                         onBack = goBack,
                         // Logged: show it in History on its day.
                         onLogged = { day ->
-                            backStack.clear()
-                            backStack.add(HistoryRoute(day.toString()))
+                            switchRoot(HistoryRoute(day.toString()))
                         },
                     )
                 }

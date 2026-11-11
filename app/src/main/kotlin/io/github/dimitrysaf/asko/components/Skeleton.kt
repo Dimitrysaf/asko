@@ -29,27 +29,39 @@ import androidx.compose.ui.unit.dp
 fun Modifier.skeleton(shape: Shape = MaterialTheme.shapes.small): Modifier {
     val base = MaterialTheme.colorScheme.surfaceContainerHighest
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-    val sweep = rememberInfiniteTransition(label = "skeleton").animateFloat(
+    return clip(shape).drawBehind { drawRect(base) }.shimmer(listOf(highlight), SKELETON_SWEEP_MS)
+}
+
+/**
+ * The skeleton's shimmer: a band in [colors] sweeping across, slightly diagonal, once every
+ * [durationMillis]. Outside the band it's [edge]: see-through by default (the skeleton's block
+ * shows), or a colour that fills the rest.
+ */
+@Composable
+fun Modifier.shimmer(colors: List<Color>, durationMillis: Int = SKELETON_SWEEP_MS, edge: Color = Color.Transparent): Modifier {
+    val sweep = rememberInfiniteTransition(label = "shimmer").animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 1_200, easing = LinearEasing), RepeatMode.Restart),
-        label = "skeleton sweep",
+        animationSpec = infiniteRepeatable(tween(durationMillis = durationMillis, easing = LinearEasing), RepeatMode.Restart),
+        label = "shimmer sweep",
     )
-    // The sweep is read while drawing, so the wave redraws without recomposing.
-    return clip(shape).drawBehind {
-        drawRect(base)
+    // The sweep is read while drawing, so the band moves without recomposing.
+    return drawBehind {
         val band = size.width * 0.6f
-        // From fully off the left edge to fully off the right edge, slightly diagonal.
+        // From fully off the left edge to fully off the right edge.
         val x = -band + (size.width + 2 * band) * sweep.value
         drawRect(
             Brush.linearGradient(
-                colors = listOf(Color.Transparent, highlight, Color.Transparent),
+                colors = listOf(edge) + colors + edge,
                 start = Offset(x - band, 0f),
                 end = Offset(x + band, size.height),
             ),
         )
     }
 }
+
+/** How long the skeleton's shimmer takes to cross. */
+const val SKELETON_SWEEP_MS = 1_200
 
 @Composable
 fun SkeletonBox(modifier: Modifier = Modifier, shape: Shape = MaterialTheme.shapes.small) {

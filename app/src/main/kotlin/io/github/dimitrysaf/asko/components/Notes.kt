@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -89,8 +90,13 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun SubjectNotes(subject: NoteSubject, id: String, modifier: Modifier = Modifier, tonal: Boolean = false) {
-    val repository = (LocalContext.current.applicationContext as AskoApplication).container.noteRepository
-    val notes by remember(subject, id) { repository.notes(subject, id) }.collectAsStateWithLifecycle(initialValue = null)
+    val container = (LocalContext.current.applicationContext as AskoApplication).container
+    val repository = container.noteRepository
+    // An exercise's notes are shared by its versions in each library: it is the same exercise.
+    val ids by produceState(listOf(id), subject, id) {
+        if (subject == NoteSubject.EXERCISE) value = container.exerciseRepository.sameExerciseIds(id)
+    }
+    val notes by remember(subject, ids) { repository.notes(subject, ids) }.collectAsStateWithLifecycle(initialValue = null)
     val scope = rememberCoroutineScope()
     var open by rememberSaveable { mutableStateOf(false) }
     NotesButton(count = notes?.size ?: 0, onClick = { open = true }, modifier = modifier, tonal = tonal)
@@ -98,7 +104,7 @@ fun SubjectNotes(subject: NoteSubject, id: String, modifier: Modifier = Modifier
         NotesSheet(
             notes = notes,
             onAdd = { note -> scope.launch { repository.add(subject, id, note) } },
-            onEdit = { note -> scope.launch { repository.edit(subject, id, note) } },
+            onEdit = { note -> scope.launch { repository.edit(note) } },
             onDelete = { note -> scope.launch { repository.delete(note.id) } },
             onDismiss = { open = false },
         )

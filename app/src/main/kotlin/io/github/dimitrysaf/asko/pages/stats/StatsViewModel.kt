@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import kotlinx.coroutines.flow.combine
+import io.github.dimitrysaf.asko.data.repository.asShown
+import io.github.dimitrysaf.asko.data.repository.lookupsOrEmpty
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -40,8 +43,8 @@ data class StatsState(
 /** Statistics over the whole history: the charts' data, the latest records, the most used exercises. */
 class StatsViewModel(workouts: WorkoutRepository, exercises: ExerciseRepository) : ViewModel() {
     /** null until the history is read. */
-    val state: StateFlow<StatsState?> = workouts.history
-        .map(::stats)
+    // An exercise's versions in each library count as one (the one shown).
+    val state: StateFlow<StatsState?> = combine(workouts.history, exercises.lookupsOrEmpty()) { history, lookup -> stats(history.asShown(lookup)) }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -51,7 +54,7 @@ class StatsViewModel(workouts: WorkoutRepository, exercises: ExerciseRepository)
     init {
         viewModelScope.launch {
             library = try {
-                exercises.all().associateBy { it.id }
+                exercises.lookup()
             } catch (e: IOException) {
                 emptyMap()
             }

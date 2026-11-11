@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.components.StreakHero
+import io.github.dimitrysaf.asko.components.segmentedShapes
+import androidx.compose.ui.Alignment
 import io.github.dimitrysaf.asko.components.EmptyState
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -65,8 +68,25 @@ fun RoutinesPage(
     onSettings: () -> Unit,
     onStats: () -> Unit,
 ) {
-    val viewModel = appViewModel { RoutinesViewModel(it.workoutRepository, it.routineRepository, it.exerciseRepository, it.activeWorkoutStore) }
+    val viewModel = appViewModel { RoutinesViewModel(it.workoutRepository, it.routineRepository, it.exerciseRepository, it.activeWorkoutStore, it.streakRepository) }
     val workoutDays by viewModel.workoutDays.collectAsStateWithLifecycle()
+    val streak by viewModel.streak.collectAsStateWithLifecycle()
+    // A streak lost to missed days: ask why (once per session if the sheet is swiped away).
+    var lostAsked by rememberSaveable { mutableStateOf(false) }
+    streak?.lost?.takeIf { !lostAsked }?.let { lost ->
+        LostStreakSheet(
+            lost = lost,
+            onExcuse = { excuse ->
+                lostAsked = true
+                viewModel.excuse(lost.missed, excuse)
+            },
+            onLetGo = {
+                lostAsked = true
+                viewModel.letGo(lost.missed)
+            },
+            onDismiss = { lostAsked = true },
+        )
+    }
     val routines by viewModel.list.collectAsStateWithLifecycle()
     // While dragging, the list moves here; the order is saved when the routine is dropped.
     var dragged by remember { mutableStateOf<List<RoutineSummary>?>(null) }
@@ -113,10 +133,16 @@ fun RoutinesPage(
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
             item(key = "week") {
-                Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Column(Modifier.padding(Dimens.SpaceM), verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
-                        Text(stringResource(R.string.routines_this_week), style = MaterialTheme.typography.titleMedium)
-                        WeekStreak(workoutDays, onDayClick)
+                // A segmented list: the streak, then this week (each day shows its mark).
+                val s = streak
+                val count = if (s != null) 2 else 1
+                Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape)
+                    Surface(shape = segmentedShapes(count - 1, count).shape, color = MaterialTheme.colorScheme.surfaceContainer) {
+                        Column(Modifier.padding(Dimens.SpaceM), verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
+                            Text(stringResource(R.string.routines_this_week), style = MaterialTheme.typography.titleMedium)
+                            WeekStreak(workoutDays, onDayClick, marks = s?.let { it::markOf }, counts = s?.let { st -> { day: LocalDate -> st.counts(day) } })
+                        }
                     }
                 }
             }

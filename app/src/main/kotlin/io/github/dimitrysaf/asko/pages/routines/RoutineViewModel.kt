@@ -43,7 +43,7 @@ class RoutineViewModel(
     private val library = flow {
         emit(
             try {
-                exercises.all().associateBy { it.id }
+                exercises.lookup()
             } catch (e: IOException) {
                 emptyMap()
             },

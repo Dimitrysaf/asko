@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.pages.exercises
 
+import io.github.dimitrysaf.asko.components.ExerciseDemo
+import io.github.dimitrysaf.asko.components.ExerciseDemoViewer
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
 import androidx.compose.ui.res.painterResource
@@ -86,7 +88,7 @@ private fun ExerciseDetailContent(
     padding: PaddingValues,
 ) {
     var viewingDemo by remember { mutableStateOf(false) }
-    if (viewingDemo) ImageViewer(exercise.animationUrl, exercise.name, onDismiss = { viewingDemo = false })
+    if (viewingDemo) ExerciseDemoViewer(exercise, onDismiss = { viewingDemo = false })
 
     LazyColumn(
         modifier = Modifier.consumeWindowInsets(padding),
@@ -95,13 +97,11 @@ private fun ExerciseDetailContent(
     ) {
         item {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                // The animated demo, sharpened (the free GIFs are small); tap for full screen.
-                RemoteImage(
-                    url = exercise.animationUrl,
-                    contentDescription = exercise.name,
+                // The demo (animation, or photos in turn); tap for full screen.
+                ExerciseDemo(
+                    exercise = exercise,
                     shape = MaterialTheme.shapes.large,
-                    modifier = Modifier.sharpenEnlarged(ExerciseDbApi.GIF_SIZE_PX)
-                        .widthIn(max = DemoMaxWidth).fillMaxWidth().aspectRatio(1f)
+                    modifier = Modifier.widthIn(max = DemoMaxWidth).fillMaxWidth().aspectRatio(1f)
                         .clickable { viewingDemo = true },
                 )
             }

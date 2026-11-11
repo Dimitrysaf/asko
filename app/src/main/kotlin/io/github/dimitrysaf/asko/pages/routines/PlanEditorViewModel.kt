@@ -14,6 +14,7 @@ import io.github.dimitrysaf.asko.data.model.SetType
 import io.github.dimitrysaf.asko.data.model.supersetRuns
 import io.github.dimitrysaf.asko.data.model.withoutSupersetGaps
 import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import java.io.IOException
 
@@ -62,8 +63,12 @@ abstract class PlanEditorViewModel(
     var dirty by mutableStateOf(false)
         protected set
 
-    /** The exercise library, for names and the picker; null while it loads. */
-    var library by mutableStateOf<List<Exercise>?>(null)
+    /** Each exercise id → the version to show (see ExerciseRepository.lookup); null while it loads. */
+    var library by mutableStateOf<Map<String, Exercise>?>(null)
+        private set
+
+    /** What the picker offers: the libraries as Settings has them; null while it loads. */
+    var browsable by mutableStateOf<List<Exercise>?>(null)
         private set
 
     /** False while existing exercises are read in. */
@@ -75,10 +80,15 @@ abstract class PlanEditorViewModel(
     init {
         viewModelScope.launch {
             library = try {
-                exercises.all()
+                exercises.lookup()
             } catch (e: IOException) {
-                emptyList() // offline before the first sync: the picker shows "no results"
+                emptyMap() // offline before the first sync: exercises show without names
             }
+        }
+        viewModelScope.launch {
+            exercises.browsable
+                .catch { e -> if (e is IOException) emit(emptyList()) else throw e }
+                .collect { browsable = it }
         }
     }
 
@@ -113,7 +123,7 @@ abstract class PlanEditorViewModel(
     }
 
     /**
-     * New exercises get 3 normal sets with no targets yet, so typing the first row fills them all;
+     * New exercises get one normal set with no targets yet (Add set copies it);
      * the last one added opens for editing.
      */
     fun addExercises(ids: List<String>) = changed {
@@ -263,6 +273,6 @@ abstract class PlanEditorViewModel(
     }
 
     private companion object {
-        const val DEFAULT_SETS = 3
+        const val DEFAULT_SETS = 1
     }
 }

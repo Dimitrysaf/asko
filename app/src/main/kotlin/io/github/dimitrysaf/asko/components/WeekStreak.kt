@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.components
 
+import io.github.dimitrysaf.asko.data.model.DayMark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,8 @@ fun WeekStreak(
     workoutDays: Set<LocalDate>?,
     onDayClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    marks: ((LocalDate) -> DayMark?)? = null,
+    counts: ((LocalDate) -> Boolean)? = null,
 ) {
     val week = remember { currentWeek() }
     val today = remember { LocalDate.now() }
@@ -40,6 +43,6 @@ fun WeekStreak(
                 }
             }
         }
-        DayRow(days = week, workoutDays = workoutDays, today = today, onDayClick = onDayClick)
+        DayRow(days = week, workoutDays = workoutDays, today = today, onDayClick = onDayClick, marks = marks, counts = counts)
     }
 }

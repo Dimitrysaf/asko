@@ -1,5 +1,10 @@
 package io.github.dimitrysaf.asko.data.repository
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.stateIn
 import io.github.dimitrysaf.asko.data.local.dao.WorkoutDao
 import io.github.dimitrysaf.asko.data.local.entity.WorkoutEntity
 import io.github.dimitrysaf.asko.data.local.toModel
@@ -11,9 +16,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 
-class WorkoutRepository(private val dao: WorkoutDao, private val notes: NoteRepository) {
-    /** Finished workouts, newest first. */
-    val history: Flow<List<Workout>> = dao.observeFinished().map { list -> list.map { it.toModel() } }
+class WorkoutRepository(private val dao: WorkoutDao, private val notes: NoteRepository, scope: CoroutineScope) {
+    /**
+     * Finished workouts, newest first, kept up to date and cached for as long as the app runs, so
+     * a page opened again shows them at once; null until first read.
+     */
+    val historyState: StateFlow<List<Workout>?> =
+        dao.observeFinished().map { list -> list.map { it.toModel() } }.stateIn(scope, SharingStarted.Lazily, null)
+
+    /** Finished workouts, newest first (from the cache). */
+    val history: Flow<List<Workout>> = historyState.filterNotNull()
 
     /** Saves an edited workout: when it started and ended, and what was done. */
     suspend fun update(id: Long, startedAt: Instant, endedAt: Instant, exercises: List<RoutineExercise>) =

@@ -189,8 +189,7 @@ fun PlanEditorScaffold(
     val openPicker = { picking = true }
     BackHandler(onBack = discard)
     BackHandler(enabled = viewModel.selectedKey != null) { viewModel.clearSelection() }
-    val library = viewModel.library
-    val byId = remember(library) { library.orEmpty().associateBy { it.id } }
+    val byId = viewModel.library.orEmpty()
 
     Scaffold(
         topBar = {
@@ -224,7 +223,7 @@ fun PlanEditorScaffold(
 
     if (picking) {
         ExercisePicker(
-            exercises = library,
+            exercises = viewModel.browsable,
             onAdd = { ids ->
                 viewModel.addExercises(ids)
                 picking = false
@@ -606,7 +605,7 @@ private fun SetTable(item: DraftExercise, bodyweight: Boolean, viewModel: PlanEd
                 ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
             }
         } else {
-            SetTableTitles(item.timed, item.repRange)
+            SetTableTitles(item.timed, item.repRange, previewColumns(item.sets.map { it.set }, item.timed))
         }
         item.sets.forEachIndexed { i, draft ->
             key(draft.key) {
@@ -648,7 +647,7 @@ private fun SetRow(
 ) {
     val set = draft.set
     if (!editable) {
-        SetPreviewRow(set, number, item.timed, item.repRange, bodyweight)
+        SetPreviewRow(set, number, item.timed, item.repRange, bodyweight, previewColumns(item.sets.map { it.set }, item.timed))
         return
     }
     Row(

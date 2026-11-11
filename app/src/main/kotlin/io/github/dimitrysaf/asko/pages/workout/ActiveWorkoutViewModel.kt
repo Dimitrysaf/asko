@@ -162,7 +162,7 @@ class ActiveWorkoutViewModel(
         }
         viewModelScope.launch {
             library = try {
-                exercises.all().associateBy { it.id }
+                exercises.lookup()
             } catch (e: IOException) {
                 emptyMap()
             }

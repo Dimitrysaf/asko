@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.navigation
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -53,10 +57,11 @@ import kotlinx.serialization.Serializable
 /** Tabs in the navigation bar (phone) / rail (tablet). */
 enum class TopLevelDestination(
     val route: NavKey,
-    val icon: ImageVector,
+    val icon: @Composable () -> Painter,
     @param:StringRes val label: Int,
 ) {
-    Routines(RoutinesRoute, Icons.AutoMirrored.Filled.List, R.string.nav_routines),
-    Discovery(DiscoveryRoute, Icons.Filled.Search, R.string.nav_discovery),
-    History(HistoryRoute(), Icons.Filled.DateRange, R.string.nav_history),
+    // A dumbbell for your routines, a clock turning back for what you've done.
+    Routines(RoutinesRoute, { painterResource(R.drawable.ic_fitness) }, R.string.nav_routines),
+    Discovery(DiscoveryRoute, { rememberVectorPainter(Icons.Filled.Search) }, R.string.nav_discovery),
+    History(HistoryRoute(), { painterResource(R.drawable.ic_history) }, R.string.nav_history),
 }

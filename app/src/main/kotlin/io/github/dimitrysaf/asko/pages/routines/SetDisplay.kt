@@ -33,7 +33,7 @@ fun List<PlannedSet>.setNumbers(): List<Int?> {
 }
 
 /** Bodyweight moves log only the added weight ("+kg"); everything else the total weight moved. */
-val Exercise.isBodyweight: Boolean get() = equipment.any { it.equals("Body Weight", ignoreCase = true) }
+val Exercise.isBodyweight: Boolean get() = equipment.any { it.replace(" ", "").equals("Bodyweight", ignoreCase = true) }
 
 @Composable
 fun setTypeName(type: SetType): String = stringResource(

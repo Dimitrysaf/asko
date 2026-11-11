@@ -180,10 +180,11 @@ fun ExercisePlanBlock(
             Column(Modifier.padding(start = Dimens.SpaceM, end = Dimens.SpaceM, bottom = Dimens.SpaceM)) {
                 if (showRest) RestPreview(planned.restSeconds)
                 Column(Modifier.padding(top = if (showRest) Dimens.SpaceS else 0.dp)) {
-                    SetTableTitles(planned.timed, planned.repRange)
+                    val columns = previewColumns(planned.sets, planned.timed)
+                    SetTableTitles(planned.timed, planned.repRange, columns)
                     val numbers = planned.sets.setNumbers()
                     planned.sets.forEachIndexed { i, set ->
-                        SetPreviewRow(set, numbers[i], planned.timed, planned.repRange, exercise.isBodyweight)
+                        SetPreviewRow(set, numbers[i], planned.timed, planned.repRange, exercise.isBodyweight, columns)
                     }
                 }
             }
@@ -217,17 +218,33 @@ internal fun restContent(restSeconds: Int): @Composable RowScope.() -> Unit {
 internal fun restLabel(seconds: Int): String =
     if (seconds == 0) stringResource(R.string.routine_rest_off) else formatSeconds(seconds)
 
-/** The set table's column titles, read-only. */
+/**
+ * Which value columns a read-only set table shows: a column no set has a value in (no reps or
+ * time target, no weight) is left out.
+ */
+internal data class PreviewColumns(val reps: Boolean = true, val weight: Boolean = true)
+
+internal fun previewColumns(sets: List<PlannedSet>, timed: Boolean) = PreviewColumns(
+    // A to-failure set always says so in the reps column.
+    reps = sets.any { set ->
+        set.type == SetType.FAILURE || if (timed) set.durationSeconds != null else set.reps != null || set.repsMax != null
+    },
+    weight = sets.any { it.weightKg != null },
+)
+
+/** The set table's column titles, read-only (only the [columns] shown). */
 @Composable
-internal fun SetTableTitles(timed: Boolean, repRange: Boolean) {
+internal fun SetTableTitles(timed: Boolean, repRange: Boolean, columns: PreviewColumns = PreviewColumns()) {
     Row(
         modifier = Modifier.heightIn(min = ButtonDefaults.MinHeight),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS),
     ) {
         ColumnLabel(stringResource(R.string.routine_col_set), Modifier.width(SetColumnWidth))
-        ColumnLabel(stringResource(repsTitle(timed, repRange)), Modifier.weight(1f))
-        ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
+        if (columns.reps) ColumnLabel(stringResource(repsTitle(timed, repRange)), Modifier.weight(1f))
+        if (columns.weight) ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
+        // With no value columns, the set badges keep to the left.
+        if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
     }
 }
 
@@ -248,9 +265,19 @@ internal fun ColumnLabel(text: String, modifier: Modifier) {
     )
 }
 
-/** One set row, read-only: the badge, then the values where the pills would be. */
+/**
+ * One set row, read-only: the badge, then the values where the pills would be. Only the [columns]
+ * shown; an empty value is left blank.
+ */
 @Composable
-internal fun SetPreviewRow(set: PlannedSet, number: Int?, timed: Boolean, repRange: Boolean, bodyweight: Boolean) {
+internal fun SetPreviewRow(
+    set: PlannedSet,
+    number: Int?,
+    timed: Boolean,
+    repRange: Boolean,
+    bodyweight: Boolean,
+    columns: PreviewColumns = PreviewColumns(),
+) {
     Row(
         modifier = Modifier.padding(top = Dimens.SpaceS),
         verticalAlignment = Alignment.CenterVertically,
@@ -258,17 +285,21 @@ internal fun SetPreviewRow(set: PlannedSet, number: Int?, timed: Boolean, repRan
     ) {
         SetBadge(set.type, number)
         val cell = Modifier.weight(1f)
-        when {
-            set.type == SetType.FAILURE -> PreviewCell(stringResource(R.string.set_failure_target), cell, muted = true)
-            timed -> PreviewCell(set.durationSeconds?.let(::formatSeconds).orEmpty(), cell)
-            repRange -> Row(cell, verticalAlignment = Alignment.CenterVertically) {
-                PreviewCell(set.reps?.toString().orEmpty(), Modifier.weight(1f))
-                RangeDash()
-                PreviewCell(set.repsMax?.toString().orEmpty(), Modifier.weight(1f))
+        if (columns.reps) {
+            when {
+                set.type == SetType.FAILURE -> PreviewCell(stringResource(R.string.set_failure_target), cell, muted = true)
+                timed -> PreviewCell(set.durationSeconds?.let(::formatSeconds).orEmpty(), cell)
+                // Both ends: "8 - 12"; only one: just that number.
+                repRange && set.reps != null && set.repsMax != null -> Row(cell, verticalAlignment = Alignment.CenterVertically) {
+                    PreviewCell(set.reps.toString(), Modifier.weight(1f))
+                    RangeDash()
+                    PreviewCell(set.repsMax.toString(), Modifier.weight(1f))
+                }
+                else -> PreviewCell((set.reps ?: set.repsMax)?.toString().orEmpty(), cell)
             }
-            else -> PreviewCell(set.reps?.toString().orEmpty(), cell)
         }
-        PreviewCell(weightText(set.weightKg, bodyweight), Modifier.weight(1f))
+        if (columns.weight) PreviewCell(weightText(set.weightKg, bodyweight), Modifier.weight(1f))
+        if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
     }
 }
 
@@ -278,12 +309,12 @@ internal fun RangeDash() {
     Text("-", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = Dimens.SpaceXs))
 }
 
-/** A set cell, read-only: the value alone, where the pill would be ("-" when empty). */
+/** A set cell, read-only: the value alone, where the pill would be (blank when empty). */
 @Composable
 internal fun PreviewCell(text: String, modifier: Modifier = Modifier, muted: Boolean = false) {
     Box(modifier.height(CellHeight), contentAlignment = Alignment.Center) {
         Text(
-            text.ifEmpty { "-" },
+            text,
             style = MaterialTheme.typography.titleMedium,
             color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else LocalContentColor.current,
             maxLines = 1,

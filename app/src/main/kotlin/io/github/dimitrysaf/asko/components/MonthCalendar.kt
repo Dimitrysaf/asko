@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.components
 
+import io.github.dimitrysaf.asko.data.model.DayMark
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,8 @@ fun MonthCalendar(
     selected: LocalDate?,
     onDayClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    marks: ((LocalDate) -> DayMark?)? = null,
+    counts: ((LocalDate) -> Boolean)? = null,
 ) {
     val today = remember { LocalDate.now() }
     val thisMonth = remember { YearMonth.from(today) }
@@ -63,7 +66,7 @@ fun MonthCalendar(
     val locale = LocalConfiguration.current.locales[0]
     val firstDayOfWeek = WeekFields.of(locale).firstDayOfWeek
 
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(Dimens.SpaceS)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 // "LLLL" is the stand-alone month name, correct on its own in every language.
@@ -113,6 +116,8 @@ fun MonthCalendar(
                         selected = selected,
                         muted = { YearMonth.from(it) != month },
                         onDayClick = onDayClick,
+                        marks = marks,
+                        counts = counts,
                     )
                 }
             }

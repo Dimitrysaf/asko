@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.components.ExerciseDemo
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
 import androidx.compose.runtime.rememberUpdatedState
@@ -554,12 +555,7 @@ private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int) {
                     }
                     Spacer(Modifier.height(48.dp)) // clear of the toggle when scrolled to the end
                 }
-                else -> RemoteImage(
-                    url = exercise.animationUrl,
-                    contentDescription = exercise.name,
-                    shape = MaterialTheme.shapes.extraLarge,
-                    modifier = Modifier.sharpenEnlarged(ExerciseDbApi.GIF_SIZE_PX).fillMaxSize(),
-                )
+                else -> ExerciseDemo(exercise, MaterialTheme.shapes.extraLarge, Modifier.fillMaxSize())
             }
         }
         FilledTonalIconToggleButton(
@@ -602,6 +598,9 @@ private fun CountdownScreen(
     // wavelength, or it looks jagged.
     val stroke = with(LocalDensity.current) { Stroke(width = ClockStroke.toPx(), cap = StrokeCap.Round) }
     val next = viewModel.currentExercise?.let { viewModel.library[it.exerciseId] }
+    // The countdown moves on every tick (5 times a second); the ring glides from one to the next
+    // at the same pace, so it drains smoothly instead of in steps.
+    val ring by animateFloatAsState(countdown.progress, tween(TickMs, easing = LinearEasing), label = "rest ring")
     LazyColumn(
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
@@ -620,7 +619,7 @@ private fun CountdownScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 CircularWavyProgressIndicator(
-                    progress = { countdown.progress },
+                    progress = { ring },
                     modifier = Modifier.fillMaxSize(),
                     stroke = stroke,
                     trackStroke = stroke,

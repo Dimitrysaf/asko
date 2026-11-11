@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.data.model.DayExcuse
+import io.github.dimitrysaf.asko.data.model.Streak
+import io.github.dimitrysaf.asko.data.repository.StreakRepository
 import kotlinx.coroutines.launch
 import io.github.dimitrysaf.asko.data.session.ActiveWorkoutSummary
 import io.github.dimitrysaf.asko.data.session.ActiveWorkoutStore
@@ -7,6 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.dimitrysaf.asko.data.model.Exercise
 import io.github.dimitrysaf.asko.data.model.Routine
+import io.github.dimitrysaf.asko.data.model.Workout
 import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
 import io.github.dimitrysaf.asko.data.repository.RoutineRepository
 import io.github.dimitrysaf.asko.data.repository.WorkoutRepository
@@ -28,7 +32,19 @@ class RoutinesViewModel(
     private val routines: RoutineRepository,
     exercises: ExerciseRepository,
     private val activeWorkouts: ActiveWorkoutStore,
+    private val streaks: StreakRepository,
 ) : ViewModel() {
+    /** The streak, each day's mark, and a lost streak to ask about; null while loading. */
+    val streak: StateFlow<Streak?> = streaks.streak
+
+    /** The missed [days] were spent sick or travelling: the streak goes on. */
+    fun excuse(days: List<LocalDate>, excuse: DayExcuse) {
+        viewModelScope.launch { streaks.excuse(days, excuse) }
+    }
+
+    /** The streak is gone; these days aren't asked about again. */
+    fun letGo(days: List<LocalDate>) = streaks.letGo(days)
+
     /** A workout left in progress (the app was closed mid-workout); null when there's none. */
     val activeWorkout: StateFlow<ActiveWorkoutSummary?> =
         activeWorkouts.current.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -36,15 +52,18 @@ class RoutinesViewModel(
     /** Days with at least one finished workout; null until the database answers. */
     val workoutDays: StateFlow<Set<LocalDate>?> =
         workouts.history
-            .map { history -> history.map { it.startedAt.localDate() }.toSet() }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+            .map(::days)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), workouts.historyState.value?.let(::days))
 
-    // Empty first, so routines show at once; names and thumbnails fill in once the library is read.
+    private fun days(history: List<Workout>) = history.map { it.startedAt.localDate() }.toSet()
+
+    // What's cached first (or empty), so routines show at once; names and thumbnails fill in once
+    // the library is read.
     private val library = flow {
-        emit(emptyMap())
+        emit(exercises.lookupNow() ?: emptyMap())
         emit(
             try {
-                exercises.all().associateBy { it.id }
+                exercises.lookup()
             } catch (e: IOException) {
                 emptyMap() // offline before the first sync: routines still show, without exercise names
             },
@@ -53,9 +72,16 @@ class RoutinesViewModel(
 
     /** Saved routines, in their order; null until the database answers. */
     val list: StateFlow<List<RoutineSummary>?> =
-        combine(routines.routines, library) { list, lib ->
-            list.map { routine -> RoutineSummary(routine, routine.exercises.mapNotNull { lib[it.exerciseId] }) }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        combine(routines.routines, library, ::summaries)
+            // Opened again: straight from the cache, no loading.
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                routines.routinesState.value?.let { summaries(it, exercises.lookupNow() ?: emptyMap()) },
+            )
+
+    private fun summaries(list: List<Routine>, lib: Map<String, Exercise>) =
+        list.map { routine -> RoutineSummary(routine, routine.exercises.mapNotNull { lib[it.exerciseId] }) }
 
     /** The routines were dragged into a new order (their ids, first to last). */
     fun setOrder(ids: List<Long>) {

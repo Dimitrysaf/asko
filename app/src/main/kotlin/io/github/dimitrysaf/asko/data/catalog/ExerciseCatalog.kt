@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import io.github.dimitrysaf.asko.data.model.DownloadProgress
 import android.os.SystemClock
-import io.github.dimitrysaf.asko.data.exercisedb.ExerciseDbApi
 import io.github.dimitrysaf.asko.data.model.Exercise
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -18,10 +17,15 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * The exercise library from ExerciseDB, saved to [file] so it works offline at the gym.
- * Downloads on first use, and again once the saved copy is a week old.
+ * One exercise library ([fetch] downloads it), saved to [file] so it works offline at the gym.
+ * Downloads on first use, and again once the saved copy is a week old. [expectedTotal]: how many
+ * steps the download reports, for its progress before the first report comes in.
  */
-class ExerciseCatalog(private val file: File) {
+class ExerciseCatalog(
+    private val file: File,
+    private val expectedTotal: Int,
+    private val fetch: suspend (onProgress: (done: Int, total: Int) -> Unit) -> List<Exercise>,
+) {
     private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
     private var cache: List<Exercise>? = null
@@ -31,7 +35,7 @@ class ExerciseCatalog(private val file: File) {
     /** How far a download is while one runs (first use, weekly refresh); null otherwise. */
     val progress: StateFlow<DownloadProgress?> = _progress.asStateFlow()
 
-    /** Throws [IOException] when nothing is saved yet and ExerciseDB can't be reached. */
+    /** Throws [IOException] when nothing is saved yet and the library can't be reached. */
     suspend fun load(): List<Exercise> = mutex.withLock {
         cache ?: withContext(Dispatchers.IO) { readSavedOrDownload() }.also { cache = it }
     }
@@ -43,9 +47,9 @@ class ExerciseCatalog(private val file: File) {
         // shortcut: the weekly refresh makes that one load wait for the download; move it to a background job if it bothers you.
         val start = SystemClock.elapsedRealtime()
         // Reported from the start (nothing in yet), not only once the first page arrives.
-        _progress.value = DownloadProgress(0, ExerciseDbApi.EXPECTED_TOTAL * 2, 0)
+        _progress.value = DownloadProgress(0, expectedTotal, 0)
         return try {
-            ExerciseDbApi.fetchExercises { done, total ->
+            fetch { done, total ->
                 _progress.value = DownloadProgress(done, total, SystemClock.elapsedRealtime() - start)
             }.also {
                 _progress.value = _progress.value?.let { p -> p.copy(done = p.total) } // full while it's saved

@@ -54,18 +54,19 @@ fun LoggedWorkoutList(
                 headlineContent = {
                     if (exercise != null) Text(exercise.name) else SkeletonLine(0.6f)
                 },
-                supportingContent = {
-                    Text(done.sets.map { setDone(it, done.timed, bodyweight) }.joinToString(", "))
-                },
+                // Only the sets with something to say; nothing at all when none have.
+                supportingContent = done.sets.map { setDone(it, done.timed, bodyweight) }.filter { it.isNotEmpty() }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { sets -> { Text(sets.joinToString(", ")) } },
             )
         }
     }
 }
 
-/** "8 × 20 kg", "8", "1:00", or "-". */
+/** "8 × 20 kg", "8", "1:00", or "" when nothing was logged for it. */
 @Composable
 private fun setDone(set: PlannedSet, timed: Boolean, bodyweight: Boolean): String {
     val amount = if (timed) set.durationSeconds?.let(::formatSeconds) else set.reps?.toString()
     val weight = weightText(set.weightKg, bodyweight).takeIf { it.isNotEmpty() }
-    return listOfNotNull(amount, weight).joinToString(" × ").ifEmpty { "-" }
+    return listOfNotNull(amount, weight).joinToString(" × ")
 }

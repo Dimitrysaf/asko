@@ -67,15 +67,17 @@ fun ExerciseStatsPage(exerciseId: String, onBack: () -> Unit, onOpenExercise: ()
             }
             return@PageScaffold
         }
-        val allTime = remember(done) { done.statsFor(exerciseId) }
+        // The version shown of this exercise: the id its sets are counted under (see the view model).
+        val shownId = viewModel.exercise?.id ?: exerciseId
+        val allTime = remember(done, shownId) { done.statsFor(shownId) }
         LazyColumn(
             modifier = Modifier.consumeWindowInsets(padding),
             contentPadding = pageContentPadding(padding),
             verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
         ) {
-            item(key = "training") { TrainingChart(done, exerciseId) }
+            item(key = "training") { TrainingChart(done, shownId) }
             if (allTime.bests.containsKey(RecordKind.HEAVIEST)) {
-                item(key = "weight") { WeightChart(done, exerciseId) }
+                item(key = "weight") { WeightChart(done, shownId) }
             }
             item(key = "all-time-title") { SectionTitle(stringResource(R.string.stats_all_time)) }
             item(key = "all-time") { AllTimeList(allTime) }

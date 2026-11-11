@@ -2,6 +2,7 @@ package io.github.dimitrysaf.asko.data.backup
 
 import androidx.room.withTransaction
 import io.github.dimitrysaf.asko.data.local.AskoDatabase
+import io.github.dimitrysaf.asko.data.model.DayExcuse
 import io.github.dimitrysaf.asko.data.model.Note
 import io.github.dimitrysaf.asko.data.model.NoteSubject
 import io.github.dimitrysaf.asko.data.model.NoteType
@@ -11,6 +12,7 @@ import io.github.dimitrysaf.asko.data.model.RoutineExercise
 import io.github.dimitrysaf.asko.data.model.SetType
 import io.github.dimitrysaf.asko.data.repository.NoteRepository
 import io.github.dimitrysaf.asko.data.repository.RoutineRepository
+import io.github.dimitrysaf.asko.data.repository.StreakRepository
 import io.github.dimitrysaf.asko.data.repository.WorkoutRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -22,6 +24,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.time.Instant
+import java.time.LocalDate
 
 /**
  * Backs up the routines and the workout history to a JSON file, and restores them from one. A
@@ -33,6 +36,7 @@ class BackupRepository(
     private val routines: RoutineRepository,
     private val workouts: WorkoutRepository,
     private val notes: NoteRepository,
+    private val streaks: StreakRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
@@ -54,6 +58,7 @@ class BackupRepository(
                 )
             },
             exerciseNotes = notes.exerciseNotes().mapValues { (_, list) -> list.map(::backupNote) },
+            excusedDays = streaks.excusesNow().map { (day, excuse) -> BackupExcusedDay(day.toString(), excuse.name) },
         )
         output.bufferedWriter().use { it.write(json.encodeToString(backup)) }
         BackupCounts(backup.routines.size, backup.workouts.size)
@@ -86,6 +91,12 @@ class BackupRepository(
                 notes.replace(NoteSubject.WORKOUT, id.toString(), w.notes.map(::note))
             }
             backup.exerciseNotes.forEach { (exerciseId, list) -> notes.replace(NoteSubject.EXERCISE, exerciseId, list.map(::note)) }
+            streaks.replaceExcuses(
+                backup.excusedDays.mapNotNull { d ->
+                    val excuse = DayExcuse.entries.firstOrNull { it.name == d.type } ?: return@mapNotNull null
+                    runCatching { LocalDate.parse(d.day) }.getOrNull()?.let { it to excuse }
+                }.toMap(),
+            )
         }
         BackupCounts(backup.routines.size, backup.workouts.size)
     }
@@ -149,7 +160,12 @@ private class BackupFile(
     val workouts: List<BackupWorkout> = emptyList(),
     /** Notes on exercises, by exercise id. */
     val exerciseNotes: Map<String, List<BackupNote>> = emptyMap(),
+    /** Sick and travel days. */
+    val excusedDays: List<BackupExcusedDay> = emptyList(),
 )
+
+@Serializable
+private class BackupExcusedDay(val day: String, val type: String)
 
 @Serializable
 private class BackupRoutine(val name: String, val exercises: List<BackupExercise> = emptyList(), val notes: List<BackupNote> = emptyList())

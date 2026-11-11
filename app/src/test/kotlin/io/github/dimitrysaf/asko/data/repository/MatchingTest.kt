@@ -16,6 +16,7 @@ class MatchingTest {
         exercise("Barbell Bench Press", equipment = listOf("Barbell")),
         exercise("Bench Dips On Floor", category = "Arms"),
         exercise("Bench Press", equipment = listOf("Barbell")),
+        exercise("Jump Squat", category = "Legs"),
         exercise("Lying Triceps Extension", category = "Arms"),
         exercise("Push-Up"),
         exercise("Squat", category = "Legs"),
@@ -41,6 +42,13 @@ class MatchingTest {
         listOf("push ups", "pushups", "push-ups", "Push up", "pushup").forEach {
             assertEquals(it, listOf("Push-Up"), names(it))
         }
+    }
+
+    @Test
+    fun `words ending in -ing also match without it`() {
+        assertEquals(listOf("Jump Squat"), names("jumping squats"))
+        assertEquals(listOf("Jump Squat"), names("Squat jumping"))
+        assertEquals(listOf("Lying Triceps Extension"), names("lying"))
     }
 
     @Test
