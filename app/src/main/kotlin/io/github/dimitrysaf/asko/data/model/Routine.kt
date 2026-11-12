@@ -6,6 +6,8 @@ data class Routine(
     val id: Long,
     val name: String,
     val exercises: List<RoutineExercise>,
+    /** The folder it's kept in on the Routines tab (a split: "Push / Pull / Legs"); null for none. */
+    val folder: String? = null,
 )
 
 data class RoutineExercise(
@@ -23,6 +25,8 @@ data class RoutineExercise(
      * each round (the last exercise of the superset's rest). Ignored on the last exercise.
      */
     val supersetWithNext: Boolean = false,
+    /** Sets are covered over a distance (running, rowing), with the time it took: no reps or weight. */
+    val distance: Boolean = false,
 )
 
 /**
@@ -53,8 +57,10 @@ data class PlannedSet(
     val repsMax: Int? = null,
     /** Total weight moved, e.g. 8 for two 4 kg dumbbells; for bodyweight moves, the added weight. */
     val weightKg: Double? = null,
-    /** Target time for timed exercises. */
+    /** Target time for timed exercises; for distance ones, the time the distance took. */
     val durationSeconds: Int? = null,
+    /** Distance covered, in metres, for distance exercises. */
+    val distanceMeters: Double? = null,
 )
 
 /** What a set is for. Marked by hand; only [NORMAL] sets are numbered. */

@@ -1,8 +1,14 @@
 package io.github.dimitrysaf.asko.components
 
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.Dp
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -49,23 +56,39 @@ import io.github.dimitrysaf.asko.data.model.Exercise
 import io.github.dimitrysaf.asko.data.repository.matching
 
 /**
- * Search field, Muscle group / Equipment dropdown chips and a segmented exercise list (A–Z sections
- * while browsing, best match first while searching). Used by Discovery and the routine exercise
- * picker; [trailing] adds per-row content such as a checkbox.
+ * Search field, filter chips (Favourites, Muscle group, Equipment) and a segmented exercise list:
+ * while browsing, Favourites and Recently used on top, then A–Z sections (exercises in the top
+ * sections stay in their letter's section too);
+ * while searching, best match first. Used by Discovery and the routine exercise picker; [trailing]
+ * adds per-row content such as a checkbox. [favourites] are exercise ids; [recent] ids are last
+ * done first.
  */
 @Composable
 fun ExerciseBrowser(
     exercises: List<Exercise>,
     onExerciseClick: (Exercise) -> Unit,
     modifier: Modifier = Modifier,
+    favourites: Set<String> = emptySet(),
+    recent: List<String> = emptyList(),
     trailing: (@Composable (Exercise) -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(),
+    /** Told whether the list is at its top (for a floating button that expands only there). */
+    onAtTop: (Boolean) -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var muscleGroup by rememberSaveable { mutableStateOf<String?>(null) }
     var equipment by rememberSaveable { mutableStateOf<String?>(null) }
-    val results = remember(exercises, query, muscleGroup, equipment) {
-        exercises.matching(query, muscleGroup, equipment)
+    var favouritesOnly by rememberSaveable { mutableStateOf(false) }
+    val results = remember(exercises, query, muscleGroup, equipment, favouritesOnly, favourites) {
+        exercises.matching(query, muscleGroup, equipment).filter { !favouritesOnly || it.id in favourites }
+    }
+    // The top sections, as filtered; only while browsing (a search sorts by match instead).
+    // Favourites only when the list isn't already just them (the Favourites chip).
+    val favouriteResults = remember(results, favourites, query, favouritesOnly) {
+        if (query.isNotBlank() || favouritesOnly) emptyList() else results.filter { it.id in favourites }
+    }
+    val recentResults = remember(results, recent, query) {
+        if (query.isNotBlank()) emptyList() else results.associateBy { it.id }.let { shown -> recent.mapNotNull(shown::get) }
     }
     Column(
         modifier = modifier.padding(horizontal = Dimens.PageGutter).padding(top = contentPadding.calculateTopPadding()),
@@ -74,6 +97,9 @@ fun ExerciseBrowser(
         SearchField(query = query, onQueryChange = { query = it }, modifier = Modifier.padding(top = Dimens.SpaceS))
         FilterChips(
             exercises = exercises,
+            showFavourites = favourites.isNotEmpty() || favouritesOnly,
+            favouritesOnly = favouritesOnly,
+            onFavouritesOnlyChange = { favouritesOnly = it },
             muscleGroup = muscleGroup,
             onMuscleGroupChange = { muscleGroup = it },
             equipment = equipment,
@@ -84,7 +110,12 @@ fun ExerciseBrowser(
             grouped = query.isBlank(),
             // Fresh scroll position per search/filter (starts at the best match); saved per key,
             // so coming back from an exercise page restores it.
-            listState = key(query, muscleGroup, equipment) { rememberLazyListState() },
+            listState = key(query, muscleGroup, equipment, favouritesOnly) { rememberLazyListState() }.also { state ->
+                val atTop by remember(state) { derivedStateOf { state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0 } }
+                LaunchedEffect(atTop) { onAtTop(atTop) }
+            },
+            favourites = favouriteResults,
+            recent = recentResults,
             onExerciseClick = onExerciseClick,
             trailing = trailing,
             bottomPadding = contentPadding.calculateBottomPadding(),
@@ -138,6 +169,9 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier
 @Composable
 private fun FilterChips(
     exercises: List<Exercise>,
+    showFavourites: Boolean,
+    favouritesOnly: Boolean,
+    onFavouritesOnlyChange: (Boolean) -> Unit,
     muscleGroup: String?,
     onMuscleGroupChange: (String?) -> Unit,
     equipment: String?,
@@ -149,22 +183,29 @@ private fun FilterChips(
         (exercises.filter { muscleGroup == null || it.category == muscleGroup }.flatMap { it.equipment } +
             listOfNotNull(equipment)).distinct().sorted()
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS)) {
-        DropdownFilterChip(
-            label = stringResource(R.string.discovery_muscle_group),
-            anyLabel = stringResource(R.string.discovery_any_muscle_group),
-            options = muscleGroups,
-            selected = muscleGroup,
-            onSelect = onMuscleGroupChange,
-        )
-        if (equipmentOptions.isNotEmpty()) {
-            DropdownFilterChip(
-                label = stringResource(R.string.discovery_equipment),
-                anyLabel = stringResource(R.string.discovery_any_equipment),
-                options = equipmentOptions,
-                selected = equipment,
-                onSelect = onEquipmentChange,
+    // Scrolls sideways when the chips don't fit the width.
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS)) {
+        if (showFavourites) {
+            FilterChip(
+                selected = favouritesOnly,
+                onClick = { onFavouritesOnlyChange(!favouritesOnly) },
+                label = { Text(stringResource(R.string.discovery_favourites)) },
+                leadingIcon = {
+                    Icon(
+                        painterResource(if (favouritesOnly) R.drawable.ic_star else R.drawable.ic_star_outline),
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                    )
+                },
             )
+        }
+        SheetFilterChip(stringResource(R.string.discovery_muscle_group), muscleGroup) { close ->
+            MuscleGroupSheet(muscleGroups, muscleGroup, onMuscleGroupChange, close)
+        }
+        if (equipmentOptions.isNotEmpty()) {
+            SheetFilterChip(stringResource(R.string.discovery_equipment), equipment) { close ->
+                EquipmentSheet(equipmentOptions, exercises, equipment, onEquipmentChange, close)
+            }
         }
     }
 }
@@ -173,13 +214,19 @@ private fun FilterChips(
 private fun String.indexLetter(): String =
     firstOrNull()?.takeIf { it.isLetter() }?.uppercase() ?: "#"
 
-/** Segmented exercise list; [grouped] splits it into A–Z sections, each its own segmented group. */
+/**
+ * Segmented exercise list; [grouped] splits it into A–Z sections, each its own segmented group.
+ * [favourites] and then [recent] come first, each a section of its own (their exercises also stay
+ * in their letter's section).
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ExerciseList(
     results: List<Exercise>,
     grouped: Boolean,
     listState: LazyListState,
+    favourites: List<Exercise>,
+    recent: List<Exercise>,
     onExerciseClick: (Exercise) -> Unit,
     trailing: (@Composable (Exercise) -> Unit)?,
     modifier: Modifier = Modifier,
@@ -188,6 +235,12 @@ private fun ExerciseList(
     if (results.isEmpty()) {
         EmptyState(rememberVectorPainter(Icons.Filled.Search), stringResource(R.string.discovery_no_results), modifier)
         return
+    }
+    // Favourites and Recently used arrive a moment after the list: when they do, it starts at the
+    // top again (a list keeps its first item in place, which would leave them above, out of view).
+    val topCount = favourites.size + recent.size
+    LaunchedEffect(topCount > 0) {
+        if (topCount > 0 && listState.firstVisibleItemIndex <= topCount + 2) listState.scrollToItem(0)
     }
     val groups = remember(results, grouped) {
         if (grouped) results.groupBy { it.name.indexLetter() } else mapOf("" to results)
@@ -199,16 +252,25 @@ private fun ExerciseList(
         contentPadding = PaddingValues(top = Dimens.SpaceS, bottom = Dimens.SpaceS + bottomPadding),
         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
     ) {
+        // Their own keys: the same exercises are in the A–Z sections below too.
+        listOf("favourite" to favourites, "recent" to recent).forEach { (section, list) ->
+            if (list.isEmpty()) return@forEach
+            item(key = section) {
+                SectionTitle(stringResource(if (section == "favourite") R.string.discovery_favourites else R.string.discovery_recent))
+            }
+            itemsIndexed(list, key = { _, exercise -> "$section-${exercise.id}" }) { index, exercise ->
+                ExerciseListItem(
+                    exercise = exercise,
+                    index = index,
+                    count = list.size,
+                    onClick = { onExerciseClick(exercise) },
+                    trailing = trailing?.let { { it(exercise) } },
+                )
+            }
+        }
         groups.forEach { (letter, group) ->
             if (letter.isNotEmpty()) {
-                item(key = "letter-$letter") {
-                    Text(
-                        text = letter,
-                        style = MaterialTheme.typography.titleMediumEmphasized,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(start = Dimens.SpaceS, top = Dimens.SpaceM, bottom = Dimens.SpaceXs),
-                    )
-                }
+                item(key = "letter-$letter") { SectionTitle(letter) }
             }
             // Index and count within the group give each group its own rounded top and bottom.
             itemsIndexed(group, key = { _, exercise -> exercise.id }) { index, exercise ->
@@ -222,4 +284,16 @@ private fun ExerciseList(
             }
         }
     }
+}
+
+/** A section's title in the list: a letter, Favourites or Recently used. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMediumEmphasized,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = Dimens.SpaceS, top = Dimens.SpaceM, bottom = Dimens.SpaceXs),
+    )
 }

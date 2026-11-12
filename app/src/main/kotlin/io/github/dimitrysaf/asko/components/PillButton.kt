@@ -44,7 +44,14 @@ fun PillButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: 
 
 /** A [PillButton] pinned at the bottom of a page (a Scaffold's bottomBar), full width. */
 @Composable
-fun PinnedPillBar(icon: ImageVector, label: String, onClick: () -> Unit, enabled: Boolean = true) {
+fun PinnedPillBar(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    /** Clear of the system's navigation bar; false in a tab, where the app's own bar is below it. */
+    aboveSystemBar: Boolean = true,
+) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
         PillButton(
             icon = icon,
@@ -53,7 +60,7 @@ fun PinnedPillBar(icon: ImageVector, label: String, onClick: () -> Unit, enabled
             enabled = enabled,
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
+                .then(if (aboveSystemBar) Modifier.navigationBarsPadding() else Modifier)
                 .padding(horizontal = Dimens.PageGutter, vertical = Dimens.SpaceS),
         )
     }

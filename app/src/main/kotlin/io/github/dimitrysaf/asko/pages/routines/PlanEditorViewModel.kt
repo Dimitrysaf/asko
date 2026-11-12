@@ -31,8 +31,10 @@ data class DraftExercise(
     val sets: List<DraftSet>,
     /** A superset with the exercise after it. */
     val supersetWithNext: Boolean = false,
+    /** Sets are a distance and a time. */
+    val distance: Boolean = false,
 ) {
-    fun toModel() = RoutineExercise(exerciseId, restSeconds, timed, repRange, sets.map { it.set }, supersetWithNext)
+    fun toModel() = RoutineExercise(exerciseId, restSeconds, timed, repRange, sets.map { it.set }, supersetWithNext, distance)
 }
 
 /** The exercises as saved; the last one links to nothing. */
@@ -103,6 +105,7 @@ abstract class PlanEditorViewModel(
                 repRange = exercise.repRange,
                 sets = exercise.sets.map { DraftSet(nextKey++, it) },
                 supersetWithNext = exercise.supersetWithNext,
+                distance = exercise.distance,
             )
         }
     }
@@ -123,18 +126,19 @@ abstract class PlanEditorViewModel(
     }
 
     /**
-     * New exercises get one normal set with no targets yet (Add set copies it);
-     * the last one added opens for editing.
+     * New exercises get one normal set with no targets yet (Add set copies it), but a bodyweight
+     * one's weight is BW from the start; the last one added opens for editing.
      */
     fun addExercises(ids: List<String>) = changed {
         ids.forEach { id ->
+            val weight = if (library?.get(id)?.isBodyweight == true) 0.0 else null
             items += DraftExercise(
                 key = nextKey++,
                 exerciseId = id,
                 restSeconds = settings.defaultRestSeconds.value,
                 timed = false,
                 repRange = false,
-                sets = List(DEFAULT_SETS) { DraftSet(nextKey++, PlannedSet(SetType.NORMAL)) },
+                sets = List(DEFAULT_SETS) { DraftSet(nextKey++, PlannedSet(SetType.NORMAL, weightKg = weight)) },
             )
         }
         items.lastOrNull()?.let { expandedKey = it.key }
@@ -198,7 +202,12 @@ abstract class PlanEditorViewModel(
 
     fun setRest(key: Int, seconds: Int) = updateExercise(key) { it.copy(restSeconds = seconds) }
 
-    fun setTimed(key: Int, timed: Boolean) = updateExercise(key) { it.copy(timed = timed) }
+    /** What its sets count: reps, a time held, or a distance (with the time it took). */
+    fun setTrack(key: Int, track: Track) = updateExercise(key) {
+        it.copy(timed = track == Track.TIME, distance = track == Track.DISTANCE)
+    }
+
+    fun setDistance(key: Int, setKey: Int, meters: Double?) = updateSet(key, setKey) { it.copy(distanceMeters = meters) }
 
     /** Reps as one number or as a range; leaving range mode drops the top values. */
     fun setRepRange(key: Int, range: Boolean) = updateExercise(key) { exercise ->
@@ -275,4 +284,14 @@ abstract class PlanEditorViewModel(
     private companion object {
         const val DEFAULT_SETS = 1
     }
+}
+
+/** What an exercise's sets count. */
+enum class Track { REPS, TIME, DISTANCE }
+
+/** What [this] exercise's sets count. */
+val DraftExercise.track: Track get() = when {
+    distance -> Track.DISTANCE
+    timed -> Track.TIME
+    else -> Track.REPS
 }

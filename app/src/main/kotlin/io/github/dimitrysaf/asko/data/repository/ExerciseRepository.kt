@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.data.repository
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filterNotNull
 import io.github.dimitrysaf.asko.data.catalog.ExerciseCatalog
 import io.github.dimitrysaf.asko.data.model.DownloadProgress
 import io.github.dimitrysaf.asko.data.model.Exercise
@@ -31,6 +33,8 @@ import java.io.IOException
 class ExerciseRepository(
     private val catalogs: Map<ExerciseSource, ExerciseCatalog>,
     private val settings: SettingsRepository,
+    /** Your exercises (the CUSTOM library); null until read. */
+    private val custom: StateFlow<List<Exercise>?>,
 ) {
     /** How far ExerciseDB's first download (the long one) is while it runs; null otherwise. */
     val downloadProgress: StateFlow<DownloadProgress?> = catalogs.getValue(ExerciseSource.EXERCISEDB).progress
@@ -44,7 +48,7 @@ class ExerciseRepository(
     /** What's browsed and searched, following the order and hiding set in Settings. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val browsable: Flow<List<Exercise>> =
-        combine(settings.sourceOrder, settings.hiddenSources) { order, hidden -> order.filterNot { it in hidden } }
+        combine(settings.sourceOrder, settings.hiddenSources, custom) { order, hidden, _ -> order.filterNot { it in hidden } }
             .mapLatest { shown -> library().let { withContext(Dispatchers.Default) { it.merged(shown) } } }
 
     /**
@@ -59,7 +63,7 @@ class ExerciseRepository(
     /** [lookup], following changes to the order and hiding in Settings. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val lookups: Flow<Map<String, Exercise>> =
-        combine(settings.sourceOrder, settings.hiddenSources) { order, hidden -> order to hidden }
+        combine(settings.sourceOrder, settings.hiddenSources, custom) { order, hidden, _ -> order to hidden }
             .mapLatest { (order, hidden) -> library().let { withContext(Dispatchers.Default) { it.resolved(order, hidden) } } }
 
     /** [lookup] as already worked out (instantly, for a page's first frame); null when it isn't yet. */
@@ -109,8 +113,10 @@ class ExerciseRepository(
     private suspend fun loadEach(): Map<ExerciseSource, List<Exercise>> = coroutineScope {
         val results = catalogs.mapValues { (_, catalog) -> async { runCatching { catalog.load() } } }
             .mapValues { it.value.await() }
-        val loaded = results.filterValues { it.isSuccess }.mapValues { it.value.getOrThrow() }
-        if (loaded.isEmpty()) {
+        // Your exercises are always there (once read); they don't make a library-less phone work.
+        val loaded = results.filterValues { it.isSuccess }.mapValues { it.value.getOrThrow() } +
+            (ExerciseSource.CUSTOM to custom.filterNotNull().first())
+        if (loaded.keys == setOf(ExerciseSource.CUSTOM)) {
             throw results.values.firstNotNullOfOrNull { it.exceptionOrNull() as? IOException } ?: IOException("No exercise library")
         }
         loaded
@@ -156,7 +162,7 @@ private class Library(private val libraries: Map<ExerciseSource, List<Exercise>>
     @Synchronized
     fun merged(shown: List<ExerciseSource>): List<Exercise> = mergedCache.getOrPut(shown) {
         val rank = shown.withIndex().associate { (i, source) -> source to i }
-        all.filter { it.source in rank }
+        all.filter { it.source in rank && !it.retired }
             .groupBy { keyOf.getValue(it.id) }
             .values.map { same -> same.minBy { rank.getValue(it.source) } }
             .sortedBy { it.name.lowercase() }

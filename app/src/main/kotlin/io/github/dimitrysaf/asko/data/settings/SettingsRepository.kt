@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import io.github.dimitrysaf.asko.data.model.ExerciseSource
 import io.github.dimitrysaf.asko.data.model.RestSchedule
+import io.github.dimitrysaf.asko.lib.format.WeightUnit
 import java.time.DayOfWeek
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,85 @@ class SettingsRepository(context: Context) {
 
     /** Buzz when a rest (or a timed set) runs out while the workout is on screen. */
     val restBuzz: StateFlow<Boolean> = _restBuzz.asStateFlow()
+
+    private val _restSound = MutableStateFlow(prefs.getBoolean(REST_SOUND, false))
+
+    /** Play the notification sound when a rest (or a timed set) runs out while the workout is on screen. */
+    val restSound: StateFlow<Boolean> = _restSound.asStateFlow()
+
+    fun setRestSound(on: Boolean) {
+        prefs.edit { putBoolean(REST_SOUND, on) }
+        _restSound.value = on
+    }
+
+    private val _weightUnit = MutableStateFlow(
+        WeightUnit.entries.firstOrNull { it.name == prefs.getString(WEIGHT_UNIT, null) } ?: WeightUnit.KG,
+    )
+
+    /** The unit weights are shown and typed in (they're stored in kilos either way). */
+    val weightUnit: StateFlow<WeightUnit> = _weightUnit.asStateFlow()
+
+    fun setWeightUnit(unit: WeightUnit) {
+        prefs.edit { putString(WEIGHT_UNIT, unit.name) }
+        _weightUnit.value = unit
+    }
+
+    private val _showMuscles = MutableStateFlow(prefs.getBoolean(SHOW_MUSCLES, true))
+
+    /** Each exercise's pictures end with the muscles it works, on wger's body. */
+    val showMuscles: StateFlow<Boolean> = _showMuscles.asStateFlow()
+
+    fun setShowMuscles(on: Boolean) {
+        prefs.edit { putBoolean(SHOW_MUSCLES, on) }
+        _showMuscles.value = on
+    }
+
+    private val _repCounter = MutableStateFlow(
+        RepCounterMode.entries.firstOrNull { it.name == prefs.getString(REP_COUNTER, null) } ?: RepCounterMode.OFF,
+    )
+
+    /** How reps are counted during a set: not at all, aloud at a steady pace, or by the camera. */
+    val repCounter: StateFlow<RepCounterMode> = _repCounter.asStateFlow()
+
+    fun setRepCounter(mode: RepCounterMode) {
+        prefs.edit { putString(REP_COUNTER, mode.name) }
+        _repCounter.value = mode
+    }
+
+    private val _sayReps = MutableStateFlow(prefs.getBoolean(SAY_REPS, true))
+
+    /** The rep counter says each rep aloud; off, it counts silently. */
+    val sayReps: StateFlow<Boolean> = _sayReps.asStateFlow()
+
+    fun setSayReps(on: Boolean) {
+        prefs.edit { putBoolean(SAY_REPS, on) }
+        _sayReps.value = on
+    }
+
+    private val _pauseOutOfView = MutableStateFlow(prefs.getBoolean(PAUSE_OUT_OF_VIEW, true))
+
+    /** With the camera counter, the workout pauses while the camera can't see you. */
+    val pauseOutOfView: StateFlow<Boolean> = _pauseOutOfView.asStateFlow()
+
+    fun setPauseOutOfView(on: Boolean) {
+        prefs.edit { putBoolean(PAUSE_OUT_OF_VIEW, on) }
+        _pauseOutOfView.value = on
+    }
+
+    /** The metronome's time per rep for an exercise, in milliseconds (2 s until changed). */
+    fun repPaceMs(exerciseId: String): Int = prefs.getInt(REP_PACE + exerciseId, DEFAULT_REP_PACE_MS)
+
+    fun setRepPaceMs(exerciseId: String, ms: Int) = prefs.edit { putInt(REP_PACE + exerciseId, ms) }
+
+    private val _healthConnect = MutableStateFlow(prefs.getBoolean(HEALTH_CONNECT, false))
+
+    /** Finished workouts and body weight are written to Health Connect (once its permissions are given). */
+    val healthConnect: StateFlow<Boolean> = _healthConnect.asStateFlow()
+
+    fun setHealthConnect(on: Boolean) {
+        prefs.edit { putBoolean(HEALTH_CONNECT, on) }
+        _healthConnect.value = on
+    }
 
     private val _keepScreenOn = MutableStateFlow(prefs.getBoolean(KEEP_SCREEN_ON, true))
 
@@ -54,11 +134,15 @@ class SettingsRepository(context: Context) {
         _hiddenSources.value = next
     }
 
-    /** As saved; libraries added since then go at the end. */
+    /**
+     * As saved; libraries added since then go at the end, except your own exercises, which go
+     * first (yours win over a library's exercise of the same name).
+     */
     private fun readSourceOrder(): List<ExerciseSource> {
         val saved = prefs.getString(SOURCE_ORDER, null).orEmpty().split(',')
             .mapNotNull { name -> ExerciseSource.entries.firstOrNull { it.name == name } }
-        return saved + ExerciseSource.entries.filterNot { it in saved }
+        val added = ExerciseSource.entries.filterNot { it in saved }
+        return added.filter { it == ExerciseSource.CUSTOM } + saved + added.filterNot { it == ExerciseSource.CUSTOM }
     }
 
     private val _restSchedule = MutableStateFlow(readRestSchedule())
@@ -124,6 +208,15 @@ class SettingsRepository(context: Context) {
     private companion object {
         const val DEFAULT_REST = "default_rest_seconds"
         const val REST_BUZZ = "rest_buzz"
+        const val REST_SOUND = "rest_sound"
+        const val WEIGHT_UNIT = "weight_unit"
+        const val HEALTH_CONNECT = "health_connect"
+        const val REP_COUNTER = "rep_counter"
+        const val SAY_REPS = "say_reps"
+        const val PAUSE_OUT_OF_VIEW = "pause_out_of_view"
+        const val REP_PACE = "rep_pace_"
+        const val DEFAULT_REP_PACE_MS = 2_000
+        const val SHOW_MUSCLES = "show_muscles"
         const val KEEP_SCREEN_ON = "keep_screen_on"
         const val EDITABLE_WORKOUT_ROWS = "editable_workout_rows"
         const val SOURCE_ORDER = "exercise_source_order"

@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import io.github.dimitrysaf.asko.data.repository.BodyWeightRepository
+import io.github.dimitrysaf.asko.data.repository.NoteRepository
+import io.github.dimitrysaf.asko.data.model.Note
+import java.time.LocalDate
 import kotlinx.coroutines.flow.combine
 import io.github.dimitrysaf.asko.data.repository.asShown
 import io.github.dimitrysaf.asko.data.repository.lookupsOrEmpty
@@ -41,7 +45,23 @@ data class StatsState(
 )
 
 /** Statistics over the whole history: the charts' data, the latest records, the most used exercises. */
-class StatsViewModel(workouts: WorkoutRepository, exercises: ExerciseRepository) : ViewModel() {
+class StatsViewModel(
+    workouts: WorkoutRepository,
+    exercises: ExerciseRepository,
+    private val bodyWeight: BodyWeightRepository,
+    notes: NoteRepository,
+) : ViewModel() {
+    /** Your body weight by day, oldest first; null until read. */
+    val bodyWeights: StateFlow<List<Pair<LocalDate, Double>>?> = bodyWeight.weights
+
+    /** Logs today's body weight. */
+    fun logBodyWeight(kg: Double) {
+        viewModelScope.launch { bodyWeight.log(LocalDate.now(), kg) }
+    }
+
+    /** Every pain note, oldest first. */
+    val painNotes: StateFlow<List<Note>> = notes.painNotes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     /** null until the history is read. */
     // An exercise's versions in each library count as one (the one shown).
     val state: StateFlow<StatsState?> = combine(workouts.history, exercises.lookupsOrEmpty()) { history, lookup -> stats(history.asShown(lookup)) }

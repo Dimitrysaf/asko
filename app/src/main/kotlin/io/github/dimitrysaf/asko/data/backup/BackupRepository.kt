@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.data.backup
 
+import io.github.dimitrysaf.asko.data.repository.BodyWeightRepository
+import io.github.dimitrysaf.asko.data.local.entity.BodyWeightEntity
+import io.github.dimitrysaf.asko.data.repository.CustomExerciseRepository
+import io.github.dimitrysaf.asko.data.local.entity.CustomExerciseEntity
 import androidx.room.withTransaction
 import io.github.dimitrysaf.asko.data.local.AskoDatabase
 import io.github.dimitrysaf.asko.data.model.DayExcuse
@@ -10,6 +14,7 @@ import io.github.dimitrysaf.asko.data.model.PlannedSet
 import io.github.dimitrysaf.asko.data.model.Routine
 import io.github.dimitrysaf.asko.data.model.RoutineExercise
 import io.github.dimitrysaf.asko.data.model.SetType
+import io.github.dimitrysaf.asko.data.repository.FavouritesRepository
 import io.github.dimitrysaf.asko.data.repository.NoteRepository
 import io.github.dimitrysaf.asko.data.repository.RoutineRepository
 import io.github.dimitrysaf.asko.data.repository.StreakRepository
@@ -37,6 +42,9 @@ class BackupRepository(
     private val workouts: WorkoutRepository,
     private val notes: NoteRepository,
     private val streaks: StreakRepository,
+    private val favourites: FavouritesRepository,
+    private val customExercises: CustomExerciseRepository,
+    private val bodyWeights: BodyWeightRepository,
 ) {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
@@ -46,7 +54,7 @@ class BackupRepository(
             version = VERSION,
             exportedAtMs = System.currentTimeMillis(),
             routines = routines.routines.first().map {
-                BackupRoutine(it.name, it.exercises.map(::backupExercise), backupNotes(NoteSubject.ROUTINE, it.id))
+                BackupRoutine(it.name, it.exercises.map(::backupExercise), backupNotes(NoteSubject.ROUTINE, it.id), it.folder)
             },
             workouts = workouts.history.first().map { w ->
                 BackupWorkout(
@@ -59,6 +67,9 @@ class BackupRepository(
             },
             exerciseNotes = notes.exerciseNotes().mapValues { (_, list) -> list.map(::backupNote) },
             excusedDays = streaks.excusesNow().map { (day, excuse) -> BackupExcusedDay(day.toString(), excuse.name) },
+            favouriteExercises = favourites.ids.value.sorted(),
+            customExercises = customExercises.allNow().map(::backupCustom),
+            bodyWeights = bodyWeights.allNow().map { BackupBodyWeight(LocalDate.ofEpochDay(it.epochDay).toString(), it.kg) },
         )
         output.bufferedWriter().use { it.write(json.encodeToString(backup)) }
         BackupCounts(backup.routines.size, backup.workouts.size)
@@ -82,7 +93,7 @@ class BackupRepository(
             database.routineDao().deleteAll()
             database.noteDao().deleteAll()
             backup.routines.forEach {
-                val id = routines.save(Routine(0, it.name, it.exercises.map(::routineExercise)))
+                val id = routines.save(Routine(0, it.name, it.exercises.map(::routineExercise), it.folder))
                 notes.replace(NoteSubject.ROUTINE, id.toString(), it.notes.map(::note))
             }
             backup.workouts.forEach { w ->
@@ -98,6 +109,13 @@ class BackupRepository(
                 }.toMap(),
             )
         }
+        // Your exercises come back (over ones with the same id); routines and workouts point at them.
+        backup.customExercises?.let { list -> customExercises.restore(list.map(::customEntity)) }
+        backup.bodyWeights?.let { list ->
+            bodyWeights.restore(list.mapNotNull { w -> runCatching { BodyWeightEntity(LocalDate.parse(w.day).toEpochDay(), w.kg) }.getOrNull() })
+        }
+        // Backups from before favourites leave them as they are.
+        backup.favouriteExercises?.let { favourites.replaceAll(it.toSet()) }
         BackupCounts(backup.routines.size, backup.workouts.size)
     }
 
@@ -130,7 +148,8 @@ private fun backupExercise(e: RoutineExercise) = BackupExercise(
     timed = e.timed,
     repRange = e.repRange,
     supersetWithNext = e.supersetWithNext,
-    sets = e.sets.map { BackupSet(it.type.name, it.reps, it.repsMax, it.weightKg, it.durationSeconds) },
+    distance = e.distance,
+    sets = e.sets.map { BackupSet(it.type.name, it.reps, it.repsMax, it.weightKg, it.durationSeconds, it.distanceMeters) },
 )
 
 private fun routineExercise(e: BackupExercise) = RoutineExercise(
@@ -139,6 +158,7 @@ private fun routineExercise(e: BackupExercise) = RoutineExercise(
     timed = e.timed,
     repRange = e.repRange,
     supersetWithNext = e.supersetWithNext,
+    distance = e.distance,
     sets = e.sets.map {
         PlannedSet(
             type = SetType.entries.firstOrNull { type -> type.name == it.type } ?: SetType.NORMAL,
@@ -146,6 +166,7 @@ private fun routineExercise(e: BackupExercise) = RoutineExercise(
             repsMax = it.repsMax,
             weightKg = it.weightKg,
             durationSeconds = it.durationSeconds,
+            distanceMeters = it.distanceMeters,
         )
     },
 )
@@ -162,13 +183,46 @@ private class BackupFile(
     val exerciseNotes: Map<String, List<BackupNote>> = emptyMap(),
     /** Sick and travel days. */
     val excusedDays: List<BackupExcusedDay> = emptyList(),
+    /** Starred exercises' ids. */
+    val favouriteExercises: List<String>? = null,
+    /** Your own exercises (not their photos and videos). */
+    val customExercises: List<BackupCustomExercise>? = null,
+    /** Your body weight by day. */
+    val bodyWeights: List<BackupBodyWeight>? = null,
 )
+
+@Serializable
+private class BackupBodyWeight(val day: String, val kg: Double)
+
+@Serializable
+private class BackupCustomExercise(
+    val id: String,
+    val name: String,
+    val category: String,
+    val primaryMuscles: String,
+    val secondaryMuscles: String,
+    val equipment: String,
+    val instructions: String,
+    val retired: Boolean = false,
+    val createdAtMs: Long,
+)
+
+private fun backupCustom(e: CustomExerciseEntity) =
+    BackupCustomExercise(e.id, e.name, e.category, e.primaryMuscles, e.secondaryMuscles, e.equipment, e.instructions, e.retired, e.createdAtMs)
+
+private fun customEntity(e: BackupCustomExercise) =
+    CustomExerciseEntity(e.id, e.name, e.category, e.primaryMuscles, e.secondaryMuscles, e.equipment, e.instructions, e.retired, e.createdAtMs)
 
 @Serializable
 private class BackupExcusedDay(val day: String, val type: String)
 
 @Serializable
-private class BackupRoutine(val name: String, val exercises: List<BackupExercise> = emptyList(), val notes: List<BackupNote> = emptyList())
+private class BackupRoutine(
+    val name: String,
+    val exercises: List<BackupExercise> = emptyList(),
+    val notes: List<BackupNote> = emptyList(),
+    val folder: String? = null,
+)
 
 @Serializable
 private class BackupWorkout(
@@ -199,6 +253,7 @@ private class BackupExercise(
     val repRange: Boolean = false,
     val sets: List<BackupSet> = emptyList(),
     val supersetWithNext: Boolean = false,
+    val distance: Boolean = false,
 )
 
 @Serializable
@@ -208,4 +263,5 @@ private class BackupSet(
     val repsMax: Int? = null,
     val weightKg: Double? = null,
     val durationSeconds: Int? = null,
+    val distanceMeters: Double? = null,
 )

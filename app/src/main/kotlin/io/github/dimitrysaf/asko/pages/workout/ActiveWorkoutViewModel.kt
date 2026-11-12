@@ -1,5 +1,11 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.pages.routines.isBodyweight
+
+import io.github.dimitrysaf.asko.pages.routines.setNumbers
+
+import io.github.dimitrysaf.asko.data.settings.SettingsRepository
+import io.github.dimitrysaf.asko.lib.notify.RoutineUpdate
 import io.github.dimitrysaf.asko.lib.notify.WorkoutSession
 import io.github.dimitrysaf.asko.lib.notify.WorkoutNotice
 import io.github.dimitrysaf.asko.lib.notify.WorkoutMode
@@ -53,6 +59,8 @@ data class PlayerExercise(
     val sets: List<PlayerSet>,
     /** A superset with the exercise after it. */
     val supersetWithNext: Boolean = false,
+    /** Sets are a distance and a time. */
+    val distance: Boolean = false,
 )
 
 enum class CountdownKind { REST, SET }
@@ -73,18 +81,28 @@ data class Countdown(val kind: CountdownKind, val totalMs: Long, val remainingMs
  */
 class ActiveWorkoutViewModel(
     private val routineId: Long,
-    routines: RoutineRepository,
+    private val routines: RoutineRepository,
     private val workouts: WorkoutRepository,
     exercises: ExerciseRepository,
     private val store: ActiveWorkoutStore,
     private val session: WorkoutSession,
+    private val settings: SettingsRepository,
+    /** What an empty workout is called while it's done ("Workout"). */
+    private val emptyName: String,
 ) : ViewModel() {
+    /** Started empty (no routine): exercises are added as you go. */
+    val isEmptyWorkout: Boolean get() = routineId == EMPTY_WORKOUT
+
     var routineName by mutableStateOf("")
         private set
     val items = mutableStateListOf<PlayerExercise>()
     var library by mutableStateOf<Map<String, Exercise>>(emptyMap())
         private set
     var loaded by mutableStateOf(false)
+        private set
+
+    /** The exercises to pick from when adding or swapping (as Discovery shows them); null while loading. */
+    var browsable by mutableStateOf<List<Exercise>?>(null)
         private set
 
     var exerciseIndex by mutableIntStateOf(0)
@@ -118,7 +136,7 @@ class ActiveWorkoutViewModel(
     val currentSet: PlayerSet? get() = currentExercise?.sets?.getOrNull(setIndex)
     val doneSets: Int get() = items.sumOf { e -> e.sets.count { it.status == SetStatus.DONE || it.status == SetStatus.FAILED } }
     val totalSets: Int get() = items.sumOf { it.sets.size }
-    val allDone: Boolean get() = loaded && items.all { e -> e.sets.none { it.status == SetStatus.PENDING } }
+    val allDone: Boolean get() = loaded && items.isNotEmpty() && items.all { e -> e.sets.none { it.status == SetStatus.PENDING } }
 
     init {
         viewModelScope.launch {
@@ -126,6 +144,8 @@ class ActiveWorkoutViewModel(
             val saved = store.load()?.takeIf { it.routineId == routineId }
             if (saved != null) {
                 restore(saved)
+            } else if (isEmptyWorkout) {
+                routineName = emptyName
             } else {
                 routines.routine(routineId).first()?.let { routine ->
                     routineName = routine.name
@@ -138,6 +158,7 @@ class ActiveWorkoutViewModel(
                             repRange = exercise.repRange,
                             sets = exercise.sets.map { PlayerSet(nextKey++, it, it.startingActual(), SetStatus.PENDING) },
                             supersetWithNext = exercise.supersetWithNext,
+                            distance = exercise.distance,
                         )
                     }
                 }
@@ -165,6 +186,13 @@ class ActiveWorkoutViewModel(
                 exercises.lookup()
             } catch (e: IOException) {
                 emptyMap()
+            }
+        }
+        viewModelScope.launch {
+            browsable = try {
+                exercises.browsable.first()
+            } catch (e: IOException) {
+                emptyList()
             }
         }
         // One clock for everything; elapsedRealtime keeps counting while the screen is off.
@@ -336,9 +364,19 @@ class ActiveWorkoutViewModel(
     fun logReps(exerciseKey: Int, setKey: Int, reps: Int) =
         updateSet(exerciseKey, setKey) { it.copy(actual = it.actual.copy(reps = reps), status = SetStatus.DONE) }
 
+    /** Logs how far a distance set went, and marks it done. */
+    fun logDistance(exerciseKey: Int, setKey: Int, meters: Double) =
+        updateSet(exerciseKey, setKey) { it.copy(actual = it.actual.copy(distanceMeters = meters), status = SetStatus.DONE) }
+
+    /** Logs how long a distance set took, and marks it done. */
+    fun logTime(exerciseKey: Int, setKey: Int, seconds: Int) =
+        updateSet(exerciseKey, setKey) { it.copy(actual = it.actual.copy(durationSeconds = seconds), status = SetStatus.DONE) }
+
     fun setReps(exerciseKey: Int, setKey: Int, reps: Int?) = setActual(exerciseKey, setKey) { it.copy(reps = reps) }
 
     fun setDuration(exerciseKey: Int, setKey: Int, seconds: Int?) = setActual(exerciseKey, setKey) { it.copy(durationSeconds = seconds) }
+
+    fun setDistance(exerciseKey: Int, setKey: Int, meters: Double?) = setActual(exerciseKey, setKey) { it.copy(distanceMeters = meters) }
 
     /**
      * A new weight for a set. The sets after it still to do that had the same weight change too:
@@ -430,6 +468,109 @@ class ActiveWorkoutViewModel(
         if (wasRest) startHoldIfTimed()
     }
 
+    /** Nothing of the exercise is logged yet: it can be swapped or removed. */
+    fun canChange(exercise: PlayerExercise): Boolean =
+        exercise.sets.none { it.status == SetStatus.DONE || it.status == SetStatus.FAILED }
+
+    /**
+     * Adds exercises at the end, each with the default rest and one empty set (as in the routine
+     * editor). In an empty workout the first one added becomes the current one.
+     */
+    fun addExercises(ids: List<String>) {
+        val wasEmpty = items.isEmpty()
+        ids.forEach { id ->
+            // A bodyweight exercise's weight is BW from the start.
+            val weight = if (library[id]?.isBodyweight == true) 0.0 else null
+            items += PlayerExercise(
+                key = nextKey++,
+                exerciseId = id,
+                restSeconds = settings.defaultRestSeconds.value,
+                timed = false,
+                repRange = false,
+                sets = listOf(PlannedSet(SetType.NORMAL, weightKg = weight).let { PlayerSet(nextKey++, it, it, SetStatus.PENDING) }),
+            )
+        }
+        if (wasEmpty && items.isNotEmpty()) {
+            exerciseIndex = 0
+            setIndex = 0
+        }
+    }
+
+    /** Puts [exerciseId] in the place of an exercise not started yet, with its sets and rest. */
+    fun swapExercise(exerciseKey: Int, exerciseId: String) {
+        val exercise = items.firstOrNull { it.key == exerciseKey } ?: return
+        if (!canChange(exercise)) return
+        replaceExercise(exerciseKey) { it.copy(exerciseId = exerciseId) }
+    }
+
+    /** Takes out an exercise not started yet; a superset closes up around it. */
+    fun removeExercise(exerciseKey: Int) {
+        val index = items.indexOfFirst { it.key == exerciseKey }
+        if (index < 0 || !canChange(items[index])) return
+        keepingCurrent { takeOut(index) }
+    }
+
+    /**
+     * Drag to reorder, as in the routine editor: within its superset it just changes places; out
+     * of it, it leaves (the superset closes up behind it), and dropped inside another, it joins it.
+     */
+    fun moveExercise(fromKey: Int, toKey: Int) = keepingCurrent {
+        val from = items.indexOfFirst { it.key == fromKey }
+        val to = items.indexOfFirst { it.key == toKey }
+        if (from < 0 || to < 0 || from == to) return@keepingCurrent
+        val run = runOf(from)
+        if (to in run) {
+            // The links belong to the places, not the exercises.
+            val links = run.map { items[it].supersetWithNext }
+            items.add(to, items.removeAt(from))
+            run.forEachIndexed { i, index -> items[index] = items[index].copy(supersetWithNext = links[i]) }
+            return@keepingCurrent
+        }
+        val moved = takeOut(from)
+        val before = items.getOrNull(to - 1)
+        items.add(to, moved.copy(supersetWithNext = before?.supersetWithNext == true))
+        items.lastOrNull()?.let { if (it.supersetWithNext) items[items.lastIndex] = it.copy(supersetWithNext = false) }
+    }
+
+    /** Opens an exercise: its first set still to do (or its first set). */
+    fun openExercise(exerciseKey: Int) {
+        val e = items.indexOfFirst { it.key == exerciseKey }
+        if (e < 0) return
+        if (countdown?.kind == CountdownKind.SET) countdown = null
+        exerciseIndex = e
+        setIndex = items[e].sets.indexOfFirst { it.status == SetStatus.PENDING }.coerceAtLeast(0)
+    }
+
+    /** Removes the exercise at [index]; the one before it links on to whatever it linked to. */
+    private fun takeOut(index: Int): PlayerExercise {
+        val removed = items.removeAt(index)
+        val before = items.getOrNull(index - 1)
+        if (before != null && before.supersetWithNext && !removed.supersetWithNext) {
+            items[index - 1] = before.copy(supersetWithNext = false)
+        }
+        return removed
+    }
+
+    /**
+     * Changes the exercises in [change], staying on the same set; if its exercise went, on the
+     * first set still to do (a timed set's clock stops).
+     */
+    private inline fun keepingCurrent(change: () -> Unit) {
+        val exerciseKey = currentExercise?.key
+        val setKey = currentSet?.key
+        change()
+        val e = items.indexOfFirst { it.key == exerciseKey }
+        if (e >= 0) {
+            exerciseIndex = e
+            setIndex = items[e].sets.indexOfFirst { it.key == setKey }.coerceAtLeast(0)
+        } else {
+            if (countdown?.kind == CountdownKind.SET) countdown = null
+            val (pe, ps) = order().firstOrNull { (x, y) -> items[x].sets[y].status == SetStatus.PENDING } ?: (0 to 0)
+            exerciseIndex = pe
+            setIndex = ps
+        }
+    }
+
     /** Throws the workout away: nothing is logged, and there's nothing to resume. */
     fun discard(onDiscarded: () -> Unit) {
         if (finishing) return
@@ -453,16 +594,54 @@ class ActiveWorkoutViewModel(
             items.forEach { e ->
                 val sets = e.sets.filter { it.status == SetStatus.DONE || it.status == SetStatus.FAILED }.map { it.actual }
                 if (sets.isNotEmpty()) {
-                    done += RoutineExercise(e.exerciseId, e.restSeconds, e.timed, repRange = false, sets = sets, supersetWithNext = e.supersetWithNext)
+                    done += RoutineExercise(e.exerciseId, e.restSeconds, e.timed, repRange = false, sets = sets, supersetWithNext = e.supersetWithNext, distance = e.distance)
                 } else if (!e.supersetWithNext) {
                     done.lastOrNull()?.let { done[done.lastIndex] = it.copy(supersetWithNext = false) }
                 }
             }
             val exercises = done.withoutSupersetGaps()
-            val id = if (exercises.isNotEmpty()) workouts.log(startedAt, exercises, endedAt = startedAt.plusMillis(elapsedMs), routineName = routineName.ifBlank { null }) else null
+            val name = if (isEmptyWorkout) null else routineName.ifBlank { null }
+            val id = if (exercises.isNotEmpty()) workouts.log(startedAt, exercises, endedAt = startedAt.plusMillis(elapsedMs), routineName = name) else null
+            // The routine as this workout went, offered on the finish screen when it differs.
+            session.routineUpdate = null
+            if (id != null && !isEmptyWorkout) {
+                routines.routine(routineId).first()?.let { routine ->
+                    val plan = plannedFromWorkout()
+                    if (plan != routine.exercises) session.routineUpdate = RoutineUpdate(id, routine, routine.copy(exercises = plan))
+                }
+            }
             onFinished(id)
         }
     }
+
+    /**
+     * The routine as this workout went: its exercises in their order now (added, swapped, removed,
+     * moved), each set as done: the weight used, and the reps done (a rep range stays a range).
+     * Sets not done, skipped or failed keep their plan; a timed set keeps its planned time.
+     */
+    private fun plannedFromWorkout(): List<RoutineExercise> = items.map { e ->
+        RoutineExercise(
+            exerciseId = e.exerciseId,
+            restSeconds = e.restSeconds,
+            timed = e.timed,
+            repRange = e.repRange,
+            sets = e.sets.map { s ->
+                when (s.status) {
+                    // A distance: how far, and how long it took.
+                    SetStatus.DONE if e.distance -> s.target.copy(distanceMeters = s.actual.distanceMeters, durationSeconds = s.actual.durationSeconds)
+                    SetStatus.DONE -> s.target.copy(
+                        weightKg = s.actual.weightKg,
+                        // A range stays a range, a to-failure set stays without a target.
+                        reps = if (e.repRange || e.timed || s.target.type == SetType.FAILURE) s.target.reps else s.actual.reps,
+                    )
+                    SetStatus.FAILED -> s.target.copy(weightKg = s.actual.weightKg)
+                    else -> s.target
+                }
+            },
+            supersetWithNext = e.supersetWithNext,
+            distance = e.distance,
+        )
+    }.withoutSupersetGaps()
 
     private fun setActual(exerciseKey: Int, setKey: Int, transform: (PlannedSet) -> PlannedSet) =
         updateSet(exerciseKey, setKey) { it.copy(actual = transform(it.actual)) }
@@ -489,11 +668,14 @@ class ActiveWorkoutViewModel(
         val now = System.currentTimeMillis()
         val running = countdown
         val exercise = currentExercise
+        // Numbered as the set badges are: only working sets count; the others go by their type.
+        val numbers = exercise?.sets?.map { it.target }?.setNumbers().orEmpty()
         return WorkoutNotice(
             routineName = routineName,
             exerciseName = exercise?.let { library[it.exerciseId]?.name },
-            setNumber = setIndex + 1,
-            setCount = exercise?.sets?.size ?: 0,
+            setNumber = numbers.getOrNull(setIndex) ?: 0,
+            setCount = numbers.count { it != null },
+            setType = currentSet?.target?.type ?: SetType.NORMAL,
             mode = when (running?.kind) {
                 CountdownKind.REST -> WorkoutMode.RESTING
                 CountdownKind.SET -> WorkoutMode.HOLDING
@@ -503,6 +685,8 @@ class ActiveWorkoutViewModel(
             startedAt = (now - elapsedMs).roundToSecond(),
             // Every set logged: the clock has stopped, as when paused.
             paused = paused || allDone,
+            exerciseSetCounts = items.map { it.sets.size },
+            setsDone = items.sumOf { e -> e.sets.count { it.status != SetStatus.PENDING } },
         )
     }
 
@@ -520,7 +704,7 @@ class ActiveWorkoutViewModel(
         restWithinExercise = restWithinExercise,
         countdown = countdown?.let { SavedCountdown(it.kind.name, it.totalMs, it.remainingMs) },
         exercises = items.map { e ->
-            SavedExercise(e.exerciseId, e.restSeconds, e.timed, e.repRange, e.sets.map { SavedSet(it.target.saved(), it.actual.saved(), it.status.name) }, e.supersetWithNext)
+            SavedExercise(e.exerciseId, e.restSeconds, e.timed, e.repRange, e.sets.map { SavedSet(it.target.saved(), it.actual.saved(), it.status.name) }, e.supersetWithNext, e.distance)
         },
         savedAtMs = System.currentTimeMillis(),
     )
@@ -544,6 +728,7 @@ class ActiveWorkoutViewModel(
                 repRange = e.repRange,
                 sets = e.sets.map { PlayerSet(nextKey++, it.target.planned(), it.actual.planned(), SetStatus.entries.firstOrNull { s -> s.name == it.status } ?: SetStatus.PENDING) },
                 supersetWithNext = e.supersetWithNext,
+                distance = e.distance,
             )
         }
         exerciseIndex = saved.exerciseIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
@@ -567,9 +752,11 @@ class ActiveWorkoutViewModel(
         val restWithinExercise: Boolean,
     )
 
-    private companion object {
-        const val TICK_MS = 200L
-        const val REST_STEP_SECONDS = 15
+    companion object {
+        /** The routine id of a workout started empty (routines' ids start at 1). */
+        const val EMPTY_WORKOUT = 0L
+        private const val TICK_MS = 200L
+        private const val REST_STEP_SECONDS = 15
     }
 }
 
@@ -579,7 +766,7 @@ class ActiveWorkoutViewModel(
  */
 private fun PlannedSet.startingActual() = copy(reps = repsMax ?: reps, repsMax = null)
 
-private fun PlannedSet.saved() = SavedValues(type.name, reps, repsMax, weightKg, durationSeconds)
+private fun PlannedSet.saved() = SavedValues(type.name, reps, repsMax, weightKg, durationSeconds, distanceMeters)
 
 private fun SavedValues.planned() = PlannedSet(
     type = SetType.entries.firstOrNull { it.name == type } ?: SetType.NORMAL,
@@ -587,4 +774,5 @@ private fun SavedValues.planned() = PlannedSet(
     repsMax = repsMax,
     weightKg = weightKg,
     durationSeconds = durationSeconds,
+    distanceMeters = distanceMeters,
 )

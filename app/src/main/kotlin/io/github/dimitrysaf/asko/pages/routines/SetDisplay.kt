@@ -97,6 +97,3 @@ fun SetBadge(type: SetType, number: Int?, modifier: Modifier = Modifier, size: D
 
 /** "1:30" for a rest or a timed set. */
 fun formatSeconds(seconds: Int): String = Duration.ofSeconds(seconds.toLong()).formatClock()
-
-/** 8, 8.5 (no trailing ".0"). */
-fun formatKg(kg: Double): String = if (kg % 1.0 == 0.0) kg.toLong().toString() else kg.toString()

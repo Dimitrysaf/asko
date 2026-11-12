@@ -14,6 +14,8 @@ data class RoutineEntity(
     val name: String,
     /** Place in the Routines list (set by dragging). Added in DB version 8. */
     @ColumnInfo(defaultValue = "0") val position: Int = 0,
+    /** The folder it's kept in; null for none. Added in DB version 12. */
+    val folder: String? = null,
 )
 
 /** One exercise in a routine. Its planned sets are [RoutineSetEntity] rows. */
@@ -44,6 +46,8 @@ data class RoutineExerciseEntity(
     @ColumnInfo(defaultValue = "0") val repRange: Boolean = false,
     /** A superset with the exercise after it. Added in DB version 7. */
     @ColumnInfo(defaultValue = "0") val supersetWithNext: Boolean = false,
+    /** Sets are a distance and a time. Added in DB version 11. */
+    @ColumnInfo(defaultValue = "0") val distance: Boolean = false,
 )
 
 /** One planned set of a routine exercise. */
@@ -70,6 +74,8 @@ data class RoutineSetEntity(
     val repsMax: Int? = null,
     val weightKg: Double?,
     val durationSeconds: Int?,
+    /** Metres. Added in DB version 11. */
+    val distanceMeters: Double? = null,
 )
 
 data class RoutineExerciseWithSets(

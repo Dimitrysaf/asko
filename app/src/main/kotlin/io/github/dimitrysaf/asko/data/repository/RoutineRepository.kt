@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import io.github.dimitrysaf.asko.data.local.dao.RoutineDao
 import io.github.dimitrysaf.asko.data.local.toEntities
@@ -30,11 +31,25 @@ class RoutineRepository(private val dao: RoutineDao, private val notes: NoteRepo
         return dao.save(entity, exercises)
     }
 
+    /**
+     * A copy of routine [id] called [name], with its exercises, sets and notes, at the end of the
+     * list. Returns the copy's id, or null when the routine is gone.
+     */
+    suspend fun duplicate(id: Long, name: String): Long? {
+        val routine = dao.observe(id).first()?.toModel() ?: return null
+        val copyId = save(routine.copy(id = 0, name = name))
+        notes.replace(NoteSubject.ROUTINE, copyId.toString(), notes.notesNow(NoteSubject.ROUTINE, id.toString()))
+        return copyId
+    }
+
     /** Deletes the routine and its notes. */
     suspend fun delete(id: Long) {
         dao.delete(id)
         notes.deleteFor(NoteSubject.ROUTINE, id.toString())
     }
+
+    /** Moves routine [id] into [folder] (blank or null: out of any folder). */
+    suspend fun setFolder(id: Long, folder: String?) = dao.setFolder(id, folder?.trim()?.ifEmpty { null })
 
     /** Saves the list's order (routine ids, first to last). */
     suspend fun setOrder(ids: List<Long>) = dao.setOrder(ids)

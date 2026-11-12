@@ -63,9 +63,7 @@ fun <T : Any> slidePredictivePopTransitionSpec(): AnimatedContentTransitionScope
  * Switching tabs: the new tab slides in from the side it sits on ([direction] 1: a tab to the
  * right, -1: to the left), pushing the old one out the other side.
  */
-fun <T : Any> slideTabTransitionSpec(direction: Int): AnimatedContentTransitionScope<Scene<T>>.() -> ContentTransform = {
-    ContentTransform(
-        targetContentEnter = slideInHorizontally(slide) { it * direction },
-        initialContentExit = slideOutHorizontally(slide) { -it * direction },
-    )
-}
+fun tabSlide(direction: Int): ContentTransform = ContentTransform(
+    targetContentEnter = slideInHorizontally(slide) { it * direction },
+    initialContentExit = slideOutHorizontally(slide) { -it * direction },
+)

@@ -24,8 +24,8 @@ import androidx.compose.ui.text.input.TextFieldValue
 import io.github.dimitrysaf.asko.R
 
 /**
- * Asks for a routine's name: before creating one, and when renaming. The field is focused with
- * the keyboard up; [onConfirm] gets the trimmed, non-blank name.
+ * Asks for a name (a routine's, or an exercise's with [title]): before creating one, and when
+ * renaming. The field is focused with the keyboard up; [onConfirm] gets the trimmed, non-blank name.
  */
 @Composable
 fun RoutineNameDialog(
@@ -33,6 +33,8 @@ fun RoutineNameDialog(
     confirmLabel: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    title: String = stringResource(R.string.routine_name),
+    placeholder: String = stringResource(R.string.routine_name_hint),
 ) {
     var name by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(initialName, selection = TextRange(0, initialName.length)))
@@ -41,12 +43,12 @@ fun RoutineNameDialog(
     val valid = name.text.isNotBlank()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.routine_name)) },
+        title = { Text(title) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                placeholder = { Text(stringResource(R.string.routine_name_hint)) },
+                placeholder = { Text(placeholder) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { if (valid) onConfirm(name.text.trim()) }),

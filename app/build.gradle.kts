@@ -23,6 +23,9 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            // Test builds carry only 64-bit native code (ML Kit's is ~20 MB per CPU type): the
+            // phone (arm64) and the emulator (x86_64). Release keeps every CPU type.
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         }
         release {
             isMinifyEnabled = true
@@ -72,6 +75,11 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.reorderable)
+    implementation(libs.androidx.health.connect)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.pose.detection)
     implementation(libs.vico.compose)
     implementation(libs.vico.compose.m3)
 
@@ -79,6 +87,7 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
+    implementation(libs.coil.svg)
     implementation(libs.coil.network.ktor3)
     implementation(libs.ktor.client.okhttp)
 }

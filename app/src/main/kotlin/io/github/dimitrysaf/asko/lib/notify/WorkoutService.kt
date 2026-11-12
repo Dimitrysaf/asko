@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.lib.notify
 
+import io.github.dimitrysaf.asko.data.model.SetType
+
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
@@ -100,6 +102,29 @@ class WorkoutService : Service() {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            // Android 16+: a Live Update, on the lock screen and as a chip in the status bar.
+            .setRequestPromotedOngoing(true)
+            // On the lock screen too: the rest counting down, where you are.
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        // The workout as a bar: a segment per exercise, as long as its sets, filled as sets are done.
+        val total = notice.exerciseSetCounts.sum()
+        if (total > 0) {
+            builder.setStyle(
+                NotificationCompat.ProgressStyle()
+                    .setProgressSegments(notice.exerciseSetCounts.filter { it > 0 }.map { NotificationCompat.ProgressStyle.Segment(it) })
+                    .setProgress(notice.setsDone.coerceIn(0, total))
+                    .setStyledByProgress(true),
+            )
+        }
+        // The status bar chip: the countdown while resting or holding (from the chronometer below),
+        // otherwise where you are: "2/4", or "Paused".
+        when {
+            notice.paused -> builder.setShortCriticalText(getString(R.string.workout_notification_paused_short))
+            notice.mode == WorkoutMode.WORKING && notice.setNumber > 0 ->
+                builder.setShortCriticalText(getString(R.string.workout_notification_set_short, notice.setNumber, notice.setCount))
+            // A warm-up and the like: its badge, "W".
+            notice.mode == WorkoutMode.WORKING && notice.setType != SetType.NORMAL -> builder.setShortCriticalText(getString(badge(notice.setType)))
+        }
         val endsAt = notice.countdownEndsAt
         when {
             notice.paused -> builder.setShowWhen(false)
@@ -139,16 +164,40 @@ class WorkoutService : Service() {
             WorkoutMode.RESTING -> getString(R.string.workout_rest)
             WorkoutMode.HOLDING -> getString(R.string.workout_hold)
         }
-        return if (notice.paused) getString(R.string.workout_notification_paused, title) else title
+        val shown = if (notice.paused) getString(R.string.workout_notification_paused, title) else title
+        // Some phones (Samsung's) draw the clock right after the title: keep a gap before it.
+        return "$shown\u2002"
     }
 
-    /** "Bench Press · set 2 of 4", or what's next while resting: "Up next: Squat · set 1". */
+    /**
+     * "Bench Press · set 2 of 4", or what's next while resting: "Up next: Squat · set 1". A warm-up
+     * (drop set, to failure, finisher) goes by its type, as its badge does: "Squat · Warm-up".
+     */
     private fun text(notice: WorkoutNotice): String {
         val name = notice.exerciseName.orEmpty()
-        return when (notice.mode) {
-            WorkoutMode.RESTING -> getString(R.string.workout_notification_next, name, notice.setNumber)
-            else -> getString(R.string.workout_notification_set, name, notice.setNumber, notice.setCount)
+        val numbered = notice.setType == SetType.NORMAL && notice.setNumber > 0
+        val set = when {
+            !numbered -> getString(typeName(notice.setType))
+            notice.mode == WorkoutMode.RESTING -> getString(R.string.workout_notification_set_number, notice.setNumber)
+            else -> getString(R.string.workout_notification_set_of, notice.setNumber, notice.setCount)
         }
+        return getString(if (notice.mode == WorkoutMode.RESTING) R.string.workout_notification_next else R.string.workout_notification_set, name, set)
+    }
+
+    private fun typeName(type: SetType) = when (type) {
+        SetType.NORMAL -> R.string.set_type_normal
+        SetType.WARMUP -> R.string.set_type_warmup
+        SetType.DROP -> R.string.set_type_drop
+        SetType.FAILURE -> R.string.set_type_failure
+        SetType.FINISHER -> R.string.set_type_finisher
+    }
+
+    private fun badge(type: SetType) = when (type) {
+        SetType.WARMUP -> R.string.set_badge_warmup
+        SetType.DROP -> R.string.set_badge_drop
+        SetType.FAILURE -> R.string.set_badge_failure
+        SetType.FINISHER -> R.string.set_badge_finisher
+        SetType.NORMAL -> R.string.set_type_normal
     }
 
     private fun notify(id: Int, notification: Notification) {

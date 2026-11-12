@@ -2,6 +2,18 @@ package io.github.dimitrysaf.asko.pages.history
 
 import io.github.dimitrysaf.asko.components.StreakHero
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.rememberSearchBarState
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -61,14 +73,42 @@ import java.time.format.DateTimeFormatter
  * one to see it all. Tapping a day in the calendar shows just that day (Show all brings back the
  * rest); [initialDay] opens with that day selected (from the week strip).
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long) -> Unit) {
-    val viewModel = appViewModel { HistoryViewModel(it.workoutRepository, it.exerciseRepository, it.streakRepository) }
+    val viewModel = appViewModel { HistoryViewModel(it.workoutRepository, it.exerciseRepository, it.streakRepository, it.noteRepository) }
     val history by viewModel.history.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
+    val workoutNotes by viewModel.workoutNotes.collectAsStateWithLifecycle()
+    val searchState = rememberSearchBarState()
+    val scope = rememberCoroutineScope()
+    // A workout opened from the search: back from it, the search is open again where it was.
+    var searchOnReturn by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (searchOnReturn) {
+            searchOnReturn = false
+            searchState.snapTo(1f)
+        }
+    }
 
-    PageScaffold(title = stringResource(R.string.nav_history)) { padding ->
+    PageScaffold(
+        title = stringResource(R.string.nav_history),
+        actions = {
+            // The search grows out of this button and shrinks back into it. Material draws the
+            // search field as tall as what it grows from, so that's a search field's height,
+            // invisible, centred on the button.
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .requiredSize(width = 48.dp, height = SearchBarDefaults.InputFieldHeight)
+                        .onGloballyPositioned { searchState.collapsedCoords = it },
+                )
+                IconButton(onClick = { scope.launch { searchState.animateToExpanded() } }, enabled = history != null) {
+                    Icon(Icons.Filled.Search, stringResource(R.string.history_search))
+                }
+            }
+        },
+    ) { padding ->
         val list = history
         val workoutDays = remember(list) { list?.map { it.startedAt.localDate() }?.toSet() }
         // Tapping a day shows just that day's workouts; tapping it again (or Show all) clears it.
@@ -138,6 +178,13 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
             }
         }
     }
+
+    history?.let { list ->
+        HistorySearch(searchState, list, viewModel.library, workoutNotes) { id ->
+            searchOnReturn = true
+            onWorkoutClick(id)
+        }
+    }
 }
 
 /**
@@ -146,7 +193,7 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HistoryEntry(workout: Workout, index: Int, count: Int, onClick: () -> Unit) {
+internal fun HistoryEntry(workout: Workout, index: Int, count: Int, onClick: () -> Unit) {
     val times = workoutTimes(workout)
     val exercises = pluralStringResource(R.plurals.history_exercise_count, workout.exercises.size, workout.exercises.size)
     SegmentedListItem(
@@ -160,7 +207,7 @@ private fun HistoryEntry(workout: Workout, index: Int, count: Int, onClick: () -
 
 /** A day's title between the workouts: the date in the middle, a still wave on each side. */
 @Composable
-private fun DateSeparator(day: LocalDate, modifier: Modifier = Modifier) {
+internal fun DateSeparator(day: LocalDate, modifier: Modifier = Modifier) {
     val today = LocalDate.now()
     val locale = LocalConfiguration.current.locales[0]
     val label = when (day) {

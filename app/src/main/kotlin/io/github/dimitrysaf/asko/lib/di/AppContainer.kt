@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.lib.di
 
+import io.github.dimitrysaf.asko.data.importing.WorkoutImporter
+import io.github.dimitrysaf.asko.lib.health.HealthConnectSync
+
+import io.github.dimitrysaf.asko.data.repository.BodyWeightRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,11 +17,15 @@ import io.github.dimitrysaf.asko.data.freeexercisedb.FreeExerciseDbApi
 import io.github.dimitrysaf.asko.data.model.ExerciseSource
 import io.github.dimitrysaf.asko.data.local.AskoDatabase
 import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
+import io.github.dimitrysaf.asko.data.repository.CustomExerciseRepository
+import io.github.dimitrysaf.asko.data.repository.MediaRepository
+import io.github.dimitrysaf.asko.data.repository.FavouritesRepository
 import io.github.dimitrysaf.asko.data.repository.NoteRepository
 import io.github.dimitrysaf.asko.data.repository.RoutineRepository
 import io.github.dimitrysaf.asko.data.repository.StreakRepository
 import io.github.dimitrysaf.asko.data.repository.WorkoutRepository
 import io.github.dimitrysaf.asko.data.session.ActiveWorkoutStore
+import io.github.dimitrysaf.asko.lib.shortcuts.AppShortcuts
 import java.io.File
 
 /** App-wide singletons, built once in [io.github.dimitrysaf.asko.AskoApplication]. */
@@ -28,6 +36,10 @@ class AppContainer(context: Context) {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val settings = SettingsRepository(context)
+
+    /** The exercises you made, and your photos and videos on exercises. */
+    val customExerciseRepository = CustomExerciseRepository(database.customExerciseDao(), appScope)
+    val mediaRepository = MediaRepository(context, database.exerciseMediaDao(), appScope)
 
     /** ExerciseDB and free-exercise-db, each saved on the device; merged as Settings says. */
     val exerciseRepository = ExerciseRepository(
@@ -42,6 +54,7 @@ class AppContainer(context: Context) {
             ) { _ -> FreeExerciseDbApi.fetchExercises() },
         ),
         settings,
+        customExerciseRepository.exercises,
     )
 
 
@@ -54,16 +67,31 @@ class AppContainer(context: Context) {
     val workoutRepository = WorkoutRepository(database.workoutDao(), noteRepository, appScope)
     val routineRepository = RoutineRepository(database.routineDao(), noteRepository, appScope)
 
+    /** Your body weight over time. */
+    val bodyWeightRepository = BodyWeightRepository(database.bodyWeightDao(), appScope)
+
+    /** Exercises starred as favourites. */
+    val favouritesRepository = FavouritesRepository(context)
+
     /** The workout streak, with sick and travel days. */
     val streakRepository = StreakRepository(workoutRepository, database.dayExcuseDao(), settings, appScope)
 
 
     /** Backing up and restoring routines and history. */
-    val backupRepository = BackupRepository(database, routineRepository, workoutRepository, noteRepository, streakRepository)
+    val backupRepository = BackupRepository(database, routineRepository, workoutRepository, noteRepository, streakRepository, favouritesRepository, customExerciseRepository, bodyWeightRepository)
+
+    /** Workouts brought in from a Strong or Hevy CSV export. */
+    val workoutImporter = WorkoutImporter(workoutRepository, exerciseRepository, customExerciseRepository, noteRepository, settings)
+
+    /** Workouts and body weight written to Health Connect, when Settings has it on. */
+    val healthConnect = HealthConnectSync(context, settings, workoutRepository, bodyWeightRepository, appScope)
 
     /** The open workout and its ongoing notification. */
     val workoutSession = WorkoutSession()
 
     /** The workout in progress, kept on disk so closing the app doesn't lose it. */
     val activeWorkoutStore = ActiveWorkoutStore(File(context.filesDir, "active_workout.json"))
+
+    /** The launcher's shortcuts, kept in step with the routines and the workout in progress. */
+    private val appShortcuts = AppShortcuts(context, routineRepository, activeWorkoutStore, appScope)
 }

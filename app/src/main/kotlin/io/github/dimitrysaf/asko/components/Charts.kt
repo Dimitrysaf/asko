@@ -16,6 +16,8 @@ import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.Scroll
 import com.patrykandpatrick.vico.compose.cartesian.axis.Axis
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
+import com.patrykandpatrick.vico.compose.cartesian.axis.VerticalAxis
+import kotlin.math.roundToInt
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianChartModel
 import com.patrykandpatrick.vico.compose.cartesian.data.CartesianValueFormatter
 import com.patrykandpatrick.vico.compose.cartesian.data.LineCartesianLayerModel
@@ -43,8 +45,8 @@ class ChartSeries(val key: String, val values: List<Double?>, val color: Color, 
 /**
  * A stacked area chart, drawn with Vico and themed from Material 3: each of the [series] is a band
  * on top of the ones before it (the first at the bottom), so the top edge is their total. Bands are
- * solid, in each series' colour; tap a point for each series' own value (tap again to hide it). No
- * guide lines. Points are spaced evenly and the chart scrolls, opening on the latest point at the
+ * solid, in each series' colour; tap a point for each series' own value (tap again to hide it). The
+ * values are named on the left, with faint guide lines across. Points are spaced evenly and the chart scrolls, opening on the latest point at the
  * right; about four of the [labels] name points on the bottom axis. One series is a plain area.
  */
 @Composable
@@ -90,6 +92,7 @@ fun AreaChart(series: List<ChartSeries>, labels: List<String>, modifier: Modifie
         CartesianChartHost(
             chart = rememberCartesianChart(
                 *layers.toTypedArray(),
+                startAxis = rememberStartAxis(shown),
                 bottomAxis = rememberBottomAxis(labels),
                 marker = rememberMarker(shown),
                 // A tap shows the values until the next tap (by default they only show while pressed).
@@ -134,6 +137,24 @@ private fun rememberBottomAxis(labels: List<String>): HorizontalAxis<Axis.Positi
         itemPlacer = remember(every, offset) { HorizontalAxis.ItemPlacer.aligned(spacing = { every }, offset = { offset }) },
     )
 }
+
+/**
+ * The value axis on the left, with faint guide lines across: about [VALUE_LABELS] values, in the
+ * series' own words when one is shown ("60 kg", "12 sets", "1:30"); with several stacked, their
+ * totals as plain numbers.
+ */
+@Composable
+private fun rememberStartAxis(shown: List<ChartSeries>): VerticalAxis<Axis.Position.Vertical.Start> =
+    VerticalAxis.rememberStart(
+        valueFormatter = remember(shown) {
+            val single = shown.singleOrNull()
+            CartesianValueFormatter { _, value, _ -> single?.format?.invoke(value) ?: value.roundToInt().toString() }
+        },
+        itemPlacer = remember { VerticalAxis.ItemPlacer.count(count = { VALUE_LABELS }) },
+    )
+
+/** About how many values the left axis names. */
+private const val VALUE_LABELS = 4
 
 /**
  * The values at a tapped point, each series' own (not the running total) in its own words:

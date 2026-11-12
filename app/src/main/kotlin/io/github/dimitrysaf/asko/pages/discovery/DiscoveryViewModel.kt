@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.dimitrysaf.asko.data.model.Exercise
 import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
+import io.github.dimitrysaf.asko.data.repository.FavouritesRepository
+import io.github.dimitrysaf.asko.data.repository.WorkoutRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,7 +22,17 @@ sealed interface DiscoveryState {
     data class Loaded(val exercises: List<Exercise>) : DiscoveryState
 }
 
-class DiscoveryViewModel(private val exercises: ExerciseRepository) : ViewModel() {
+class DiscoveryViewModel(
+    private val exercises: ExerciseRepository,
+    favourites: FavouritesRepository,
+    workouts: WorkoutRepository,
+) : ViewModel() {
+    /** Starred exercises: the Favourites chip filters to them. */
+    val favourites: StateFlow<Set<String>> = favourites.ids
+
+    /** Exercises done most recently, listed on top; null until the history is read. */
+    val recent: StateFlow<List<String>?> = workouts.recentExerciseIdsState
+
     /** The library's first download, while it runs: the loading screen shows it. */
     val download: StateFlow<DownloadProgress?> = exercises.downloadProgress
 

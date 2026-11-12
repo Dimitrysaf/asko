@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.history
 
+import io.github.dimitrysaf.asko.data.model.Note
+import io.github.dimitrysaf.asko.data.repository.NoteRepository
+
 import io.github.dimitrysaf.asko.data.model.Streak
 import io.github.dimitrysaf.asko.data.repository.StreakRepository
 import androidx.compose.runtime.getValue
@@ -17,12 +20,21 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
 
-class HistoryViewModel(workouts: WorkoutRepository, exercises: ExerciseRepository, streaks: StreakRepository) : ViewModel() {
+class HistoryViewModel(
+    workouts: WorkoutRepository,
+    exercises: ExerciseRepository,
+    streaks: StreakRepository,
+    notes: NoteRepository,
+) : ViewModel() {
     /** The streak and each day's mark for the calendar; null while loading. */
     val streak: StateFlow<Streak?> = streaks.streak
 
     /** Finished workouts, newest first; null while loading. */
     val history: StateFlow<List<Workout>?> = workouts.historyState
+
+    /** Each workout's notes, by its id, for search. */
+    val workoutNotes: StateFlow<Map<Long, List<Note>>> =
+        notes.workoutNotes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** The exercise library, for names and pictures; empty until loaded (or offline before a sync). */
     var library by mutableStateOf(exercises.lookupNow() ?: emptyMap())

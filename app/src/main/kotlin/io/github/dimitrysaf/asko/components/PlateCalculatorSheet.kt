@@ -45,8 +45,8 @@ import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.R
 import io.github.dimitrysaf.asko.constants.Dimens
 import io.github.dimitrysaf.asko.pages.routines.CustomWeightDialog
-import io.github.dimitrysaf.asko.pages.routines.formatKg
-import kotlin.math.roundToInt
+import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
+import io.github.dimitrysaf.asko.lib.format.weightValue
 
 /**
  * The plate calculator: build the bar, read the total. The total is on top, with Add a plate
@@ -57,7 +57,8 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlateCalculatorSheet(onUse: (Double) -> Unit, onDismiss: () -> Unit) {
-    var barKg by rememberSaveable { mutableStateOf(DEFAULT_BAR_KG) }
+    val unit = LocalWeightUnit.current
+    var barKg by rememberSaveable { mutableStateOf(unit.barKg) }
     val plates = rememberSaveable(saver = PlatesSaver) { mutableStateListOf<Double>() }
     var twoBars by rememberSaveable { mutableStateOf(false) }
     var editingBar by rememberSaveable { mutableStateOf(false) }
@@ -139,7 +140,7 @@ fun PlateCalculatorSheet(onUse: (Double) -> Unit, onDismiss: () -> Unit) {
     removing?.let { plate ->
         AlertDialog(
             onDismissRequest = { removing = null },
-            title = { Text(stringResource(R.string.calculator_remove_title, formatKg(plate))) },
+            title = { Text(stringResource(R.string.calculator_remove_title, weightValue(plate))) },
             text = { Text(stringResource(R.string.calculator_remove_message)) },
             confirmButton = {
                 TextButton(
@@ -243,7 +244,7 @@ private fun Plate(kg: Double, color: androidx.compose.ui.graphics.Color, onPlate
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            formatKg(kg),
+            LocalWeightUnit.current.number(kg),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.surface,
             maxLines = 1,
@@ -258,7 +259,7 @@ private val MinSleeveWidth = 72.dp
 private val SleeveTip = 14.dp
 
 @Composable
-private fun kgText(kg: Double) = stringResource(R.string.routine_kg_value, formatKg((kg * 100).roundToInt() / 100.0))
+private fun kgText(kg: Double) = weightValue(kg)
 
 private val BarbellHeight = 160.dp
 
@@ -271,8 +272,6 @@ private fun plateWidth(kg: Double): Dp = when {
     kg >= 5 -> 30.dp
     else -> 28.dp
 }
-
-private const val DEFAULT_BAR_KG = 20.0
 
 private val PlatesSaver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<Double>, Double>(
     save = { it.toList() },

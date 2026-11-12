@@ -45,6 +45,14 @@ class NoteRepository(private val dao: NoteDao) {
     suspend fun replace(subject: NoteSubject, id: String, notes: List<Note>) =
         dao.replace(subject.name, id, notes.map { it.toEntity(subject, id).copy(id = 0) })
 
+    /** Every pain note, on anything, oldest first (the pain timeline). */
+    /** Every workout's notes, by the workout's id (History search looks through them). */
+    val workoutNotes: Flow<Map<Long, List<Note>>> = dao.observeAllOf(NoteSubject.WORKOUT.name).map { list ->
+        list.groupBy({ it.subjectId.toLongOrNull() ?: -1L }, { it.toModel() })
+    }
+
+    val painNotes: Flow<List<Note>> = dao.observeOfType(NoteType.PAIN.name).map { list -> list.map { it.toModel() } }
+
     /** Every exercise note, by exercise id (for backups). */
     suspend fun exerciseNotes(): Map<String, List<Note>> =
         dao.allOf(NoteSubject.EXERCISE.name).groupBy({ it.subjectId }, { it.toModel() })

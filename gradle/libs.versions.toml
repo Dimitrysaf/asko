@@ -21,6 +21,9 @@ kotlinx-serialization = "1.10.0"
 coil = "3.5.0-beta01"
 ktor = "3.4.1"
 vico = "3.3.1" # charts (Material 3 themed)
+health-connect = "1.1.0"
+camerax = "1.4.2" # the camera rep counter
+mlkit-pose = "18.0.0-beta5" # on-device pose detection for the camera rep counter # writes finished workouts and body weight to Health Connect
 
 [libraries]
 # AndroidX core
@@ -54,9 +57,19 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 # Exercise visuals
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coil" } # plays ExerciseDB's animated demos
+coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" } # wger's muscle images
 # Lets Coil load images from the network (it picks the network module up automatically).
 coil-network-ktor3 = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
+
+# Camera rep counter
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
+mlkit-pose-detection = { module = "com.google.mlkit:pose-detection", version.ref = "mlkit-pose" }
+
+# Health Connect
+androidx-health-connect = { module = "androidx.health.connect:connect-client", version.ref = "health-connect" }
 
 # Charts
 vico-compose = { module = "com.patrykandpatrick.vico:compose", version.ref = "vico" }

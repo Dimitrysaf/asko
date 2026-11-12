@@ -38,6 +38,8 @@ data class WorkoutExerciseEntity(
     val repRange: Boolean,
     /** Done as a superset with the exercise after it. Added in DB version 7. */
     @ColumnInfo(defaultValue = "0") val supersetWithNext: Boolean = false,
+    /** Sets were a distance and a time. Added in DB version 11. */
+    @ColumnInfo(defaultValue = "0") val distance: Boolean = false,
 )
 
 /** One set of a workout exercise. */
@@ -63,6 +65,8 @@ data class WorkoutSetEntity(
     val repsMax: Int?,
     val weightKg: Double?,
     val durationSeconds: Int?,
+    /** Metres. Added in DB version 11. */
+    val distanceMeters: Double? = null,
 )
 
 data class WorkoutExerciseWithSets(

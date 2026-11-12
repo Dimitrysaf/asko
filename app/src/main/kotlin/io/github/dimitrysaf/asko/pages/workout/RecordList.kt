@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.lib.format.distanceValue
+import io.github.dimitrysaf.asko.lib.format.paceValue
+import io.github.dimitrysaf.asko.lib.format.metersPerDistanceUnit
 import java.time.Instant
 import io.github.dimitrysaf.asko.lib.format.formatDate
 import androidx.compose.foundation.background
@@ -28,7 +31,8 @@ import io.github.dimitrysaf.asko.components.segmentedShapes
 import io.github.dimitrysaf.asko.data.model.Exercise
 import io.github.dimitrysaf.asko.data.stats.PersonalRecord
 import io.github.dimitrysaf.asko.data.stats.RecordKind
-import io.github.dimitrysaf.asko.pages.routines.formatKg
+import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
+import io.github.dimitrysaf.asko.lib.format.weightValue
 import io.github.dimitrysaf.asko.pages.routines.formatSeconds
 import kotlin.math.roundToInt
 
@@ -85,14 +89,20 @@ fun recordName(kind: RecordKind): String = stringResource(
         RecordKind.MOST_REPS -> R.string.record_most_reps
         RecordKind.ONE_REP_MAX -> R.string.record_one_rep_max
         RecordKind.LONGEST_HOLD -> R.string.record_longest_hold
+        RecordKind.LONGEST_DISTANCE -> R.string.record_longest_distance
+        RecordKind.FASTEST_PACE -> R.string.record_fastest_pace
     },
 )
 
 /** "100 kg", "12 reps", "112.5 kg" (estimates to the nearest half kilo), "1:30". */
 @Composable
 fun recordValue(kind: RecordKind, value: Double): String = when (kind) {
-    RecordKind.HEAVIEST -> stringResource(R.string.routine_kg_value, formatKg(value))
-    RecordKind.ONE_REP_MAX -> stringResource(R.string.routine_kg_value, formatKg((value * 2).roundToInt() / 2.0))
+    RecordKind.HEAVIEST -> weightValue(value)
+    // An estimate: to the nearest half (kilo or pound).
+    RecordKind.ONE_REP_MAX -> LocalWeightUnit.current.let { unit -> weightValue(unit.toKg((unit.fromKg(value) * 2).roundToInt() / 2.0), unit = unit) }
     RecordKind.MOST_REPS -> pluralStringResource(R.plurals.record_reps, value.toInt(), value.toInt())
     RecordKind.LONGEST_HOLD -> formatSeconds(value.toInt())
+    RecordKind.LONGEST_DISTANCE -> distanceValue(value)
+    // Stored as a speed (higher is faster); shown as the time per km (or mile).
+    RecordKind.FASTEST_PACE -> paceValue((LocalWeightUnit.current.metersPerDistanceUnit / value).roundToInt())
 }

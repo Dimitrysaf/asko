@@ -1,5 +1,10 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.pages.workout.ActiveWorkoutViewModel
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedListItem
 import io.github.dimitrysaf.asko.components.StreakHero
 import io.github.dimitrysaf.asko.components.segmentedShapes
 import androidx.compose.ui.Alignment
@@ -32,7 +37,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +73,7 @@ fun RoutinesPage(
     onCreateRoutine: (name: String) -> Unit,
     onRoutineClick: (routineId: Long) -> Unit,
     onResumeWorkout: (routineId: Long) -> Unit,
+    onStartRoutine: (routineId: Long) -> Unit,
     onSettings: () -> Unit,
     onStats: () -> Unit,
 ) {
@@ -99,6 +108,8 @@ fun RoutinesPage(
         val fromIndex = current.indexOfFirst { it.routine.id == fromId }
         val toIndex = current.indexOfFirst { it.routine.id == toId }
         if (fromIndex < 0 || toIndex < 0) return@rememberReorderableLazyListState
+        // A routine moves within its folder; Move to folder takes it to another.
+        if (!current[fromIndex].routine.folder.equals(current[toIndex].routine.folder, ignoreCase = true)) return@rememberReorderableLazyListState
         current.add(toIndex, current.removeAt(fromIndex))
         dragged = current
     }
@@ -106,6 +117,15 @@ fun RoutinesPage(
     LaunchedEffect(routines) { if (!reorder.isAnyItemDragging) dragged = null }
     var naming by rememberSaveable { mutableStateOf(false) }
     val activeWorkout by viewModel.activeWorkout.collectAsStateWithLifecycle()
+    val averageDurations by viewModel.averageDurations.collectAsStateWithLifecycle()
+    // Start on a routine while another's workout is in progress: asks first (its routine id).
+    var confirmingStart by rememberSaveable { mutableStateOf<Long?>(null) }
+    var choosingLog by rememberSaveable { mutableStateOf(false) }
+    /** Starts a routine's workout, or one started empty; asks first if another is in progress. */
+    fun start(routineId: Long) {
+        val active = activeWorkout
+        if (active == null || active.routineId == routineId) onStartRoutine(routineId) else confirmingStart = routineId
+    }
     if (naming) {
         RoutineNameDialog(
             initialName = "",
@@ -149,7 +169,7 @@ fun RoutinesPage(
             item(key = "actions") {
                 Row(Modifier.padding(top = PageSpacing), horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS)) {
                     // Widths follow the labels (1 : 1.5) so "Create routine" fits on one line next to "Log".
-                    PillButton(Icons.Filled.Add, stringResource(R.string.action_log), onClick = onLog, Modifier.weight(1f))
+                    PillButton(Icons.Filled.Add, stringResource(R.string.action_log), onClick = { choosingLog = true }, Modifier.weight(1f))
                     PillButton(Icons.Filled.Edit, stringResource(R.string.action_create_routine), onClick = { naming = true }, Modifier.weight(1.5f))
                 }
             }
@@ -170,37 +190,127 @@ fun RoutinesPage(
                         compact = true,
                     )
                 }
-                // Hold a routine to pick it up and drag it into place.
-                else -> itemsIndexed(list, key = { _, summary -> summary.routine.id }) { index, summary ->
-                    ReorderableItem(reorder, key = summary.routine.id) { dragging ->
-                        RoutineListItem(
-                            routine = summary.routine,
-                            exercises = summary.exercises,
-                            index = index,
-                            count = list.size,
-                            // A workout in progress shows as selected (so does the routine being dragged);
-                            // tapping it goes straight back into the workout.
-                            selected = dragging || summary.routine.id == activeWorkout?.routineId,
-                            modifier = Modifier.longPressDraggableHandle(
-                                onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                                onDragStopped = {
-                                    dragged?.let { order -> viewModel.setOrder(order.map { it.routine.id }) }
-                                },
-                            ),
-                            onClick = {
-                                if (summary.routine.id == activeWorkout?.routineId) {
-                                    onResumeWorkout(summary.routine.id)
-                                } else {
-                                    onRoutineClick(summary.routine.id)
-                                }
-                            },
-                        )
+                // Routines outside a folder first, then each folder under its title (in the order the
+                // list puts them). Hold a routine to pick it up and drag it into place in its group.
+                else -> list.groupBy { it.routine.folder?.lowercase() }.entries
+                    .sortedBy { it.key != null }
+                    .forEachIndexed { g, (_, group) ->
+                        val folder = group.first().routine.folder
+                        if (folder != null) {
+                            item(key = "folder-${folder.lowercase()}") {
+                                FolderTitle(folder, Modifier.padding(top = if (g > 0) GroupSpacing else 0.dp))
+                            }
+                        }
+                        itemsIndexed(group, key = { _, summary -> summary.routine.id }) { index, summary ->
+                            ReorderableItem(reorder, key = summary.routine.id) { dragging ->
+                                RoutineListItem(
+                                    routine = summary.routine,
+                                    exercises = summary.exercises,
+                                    index = index,
+                                    count = group.size,
+                                    // A workout in progress shows as selected (so does the routine being dragged);
+                                    // tapping it goes straight back into the workout.
+                                    selected = dragging || summary.routine.id == activeWorkout?.routineId,
+                                    inProgress = summary.routine.id == activeWorkout?.routineId,
+                                    modifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                        onDragStopped = {
+                                            dragged?.let { order -> viewModel.setOrder(order.map { it.routine.id }) }
+                                        },
+                                    ),
+                                    averageDuration = averageDurations[summary.routine.name],
+                                    // Its own workout in progress: back into it. Another's: ask first.
+                                    onStart = { start(summary.routine.id) },
+                                    onClick = {
+                                        if (summary.routine.id == activeWorkout?.routineId) {
+                                            onResumeWorkout(summary.routine.id)
+                                        } else {
+                                            onRoutineClick(summary.routine.id)
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     }
-                }
             }
         }
+    }
+
+    if (choosingLog) {
+        LogChoiceSheet(
+            resumingEmpty = activeWorkout?.routineId == ActiveWorkoutViewModel.EMPTY_WORKOUT,
+            onStartEmpty = {
+                choosingLog = false
+                start(ActiveWorkoutViewModel.EMPTY_WORKOUT)
+            },
+            onLogPast = {
+                choosingLog = false
+                onLog()
+            },
+            onDismiss = { choosingLog = false },
+        )
+    }
+
+    val other = activeWorkout
+    val starting = confirmingStart
+    if (starting != null && other != null) {
+        AlertDialog(
+            onDismissRequest = { confirmingStart = null },
+            title = { Text(stringResource(R.string.workout_in_progress)) },
+            text = { Text(stringResource(R.string.workout_switch_message, other.routineName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingStart = null
+                    onResumeWorkout(other.routineId)
+                }) { Text(stringResource(R.string.workout_resume)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        confirmingStart = null
+                        viewModel.discardActiveWorkout { onStartRoutine(starting) }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(stringResource(R.string.workout_discard_and_start)) }
+            },
+        )
     }
 }
 
 /** Space between the page's sections (the list itself is spaced by the segmented gap). */
 private val PageSpacing = Dimens.SpaceM
+
+/**
+ * What Log does, picked in a sheet: start an empty workout (the clock runs, exercises are added as
+ * you go; Resume when one is in progress), or log a workout already done, for now or another day.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun LogChoiceSheet(resumingEmpty: Boolean, onStartEmpty: () -> Unit, onLogPast: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(start = Dimens.PageGutter, end = Dimens.PageGutter, bottom = Dimens.SpaceL),
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+        ) {
+            Text(
+                stringResource(R.string.log_choice_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = Dimens.SpaceM),
+            )
+            SegmentedListItem(
+                onClick = onStartEmpty,
+                shapes = segmentedShapes(0, 2),
+                leadingContent = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                supportingContent = { Text(stringResource(R.string.log_choice_empty_hint)) },
+                content = { Text(stringResource(if (resumingEmpty) R.string.log_choice_resume_empty else R.string.log_choice_empty)) },
+            )
+            SegmentedListItem(
+                onClick = onLogPast,
+                shapes = segmentedShapes(1, 2),
+                leadingContent = { Icon(painterResource(R.drawable.ic_history), contentDescription = null) },
+                supportingContent = { Text(stringResource(R.string.log_choice_past_hint)) },
+                content = { Text(stringResource(R.string.log_choice_past)) },
+            )
+        }
+    }
+}

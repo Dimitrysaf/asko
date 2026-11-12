@@ -1,5 +1,10 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import io.github.dimitrysaf.asko.data.stats.RecordEvent
+import io.github.dimitrysaf.asko.data.stats.RepMax
+import io.github.dimitrysaf.asko.data.stats.recordHistory
+import io.github.dimitrysaf.asko.data.stats.repMaxes
+import io.github.dimitrysaf.asko.lib.format.weightValue
 import io.github.dimitrysaf.asko.data.stats.statsFor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,7 +49,8 @@ import io.github.dimitrysaf.asko.pages.workout.recordValue
 /**
  * One exercise's stats, from the Stats page: an area chart of its sets, reps and (for timed sets)
  * time, each toggled on or off, and one of its heaviest weight, each over a range you pick; then
- * its all-time bests. ⓘ opens the exercise's page.
+ * its all-time bests, its heaviest set for each number of reps, and every record it has set.
+ * ⓘ opens the exercise's page.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -70,6 +76,8 @@ fun ExerciseStatsPage(exerciseId: String, onBack: () -> Unit, onOpenExercise: ()
         // The version shown of this exercise: the id its sets are counted under (see the view model).
         val shownId = viewModel.exercise?.id ?: exerciseId
         val allTime = remember(done, shownId) { done.statsFor(shownId) }
+        val repMaxes = remember(done, shownId) { done.repMaxes(shownId) }
+        val records = remember(done, shownId) { done.recordHistory(shownId) }
         LazyColumn(
             modifier = Modifier.consumeWindowInsets(padding),
             contentPadding = pageContentPadding(padding),
@@ -81,6 +89,14 @@ fun ExerciseStatsPage(exerciseId: String, onBack: () -> Unit, onOpenExercise: ()
             }
             item(key = "all-time-title") { SectionTitle(stringResource(R.string.stats_all_time)) }
             item(key = "all-time") { AllTimeList(allTime) }
+            if (repMaxes.isNotEmpty()) {
+                item(key = "rep-max-title") { SectionTitle(stringResource(R.string.stats_rep_maxes)) }
+                item(key = "rep-max") { RepMaxList(repMaxes) }
+            }
+            if (records.isNotEmpty()) {
+                item(key = "record-history-title") { SectionTitle(stringResource(R.string.stats_record_history)) }
+                item(key = "record-history") { RecordHistoryList(records) }
+            }
         }
     }
 }
@@ -106,6 +122,46 @@ private fun AllTimeList(stats: ExerciseStats) {
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
                 headlineContent = { Text(label) },
                 trailingContent = { Text(value, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) },
+            )
+        }
+    }
+}
+
+/** The heaviest set for each number of reps (1 to 12), with when it was lifted. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RepMaxList(maxes: List<RepMax>) {
+    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+        maxes.forEachIndexed { index, max ->
+            ListItem(
+                modifier = Modifier.clip(segmentedShapes(index, maxes.size).shape),
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                headlineContent = { Text(pluralStringResource(R.plurals.record_reps, max.reps, max.reps)) },
+                supportingContent = { Text(max.at.formatDate()) },
+                trailingContent = {
+                    Text(weightValue(max.weightKg), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                },
+            )
+        }
+    }
+}
+
+/** Every record the exercise has set, newest first: which, the new best, when, and what it beat. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RecordHistoryList(events: List<RecordEvent>) {
+    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+        events.forEachIndexed { index, event ->
+            ListItem(
+                modifier = Modifier.clip(segmentedShapes(index, events.size).shape),
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                headlineContent = { Text(recordName(event.kind)) },
+                supportingContent = {
+                    Text(stringResource(R.string.stats_record_when, event.at.formatDate(), recordValue(event.kind, event.previous)))
+                },
+                trailingContent = {
+                    Text(recordValue(event.kind, event.value), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                },
             )
         }
     }

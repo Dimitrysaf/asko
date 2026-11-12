@@ -42,9 +42,10 @@ interface RoutineDao {
      */
     @Transaction
     suspend fun save(routine: RoutineEntity, exercises: List<Pair<RoutineExerciseEntity, List<RoutineSetEntity>>>): Long {
-        // An edited routine keeps its place; a new one goes to the end of the list.
+        // An edited routine keeps its place and its folder; a new one goes to the end of the list.
         val position = if (routine.id != 0L) positionOf(routine.id) ?: nextPosition() else nextPosition()
-        val inserted = upsertRoutine(routine.copy(position = position))
+        val folder = if (routine.id != 0L) folderOf(routine.id) else routine.folder
+        val inserted = upsertRoutine(routine.copy(position = position, folder = folder))
         val routineId = if (routine.id != 0L) routine.id else inserted
         deleteExercises(routineId)
         exercises.forEachIndexed { i, (exercise, sets) ->
@@ -56,6 +57,13 @@ interface RoutineDao {
 
     @Query("DELETE FROM routines WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("SELECT folder FROM routines WHERE id = :id")
+    suspend fun folderOf(id: Long): String?
+
+    /** Moves a routine into [folder] (null: out of any). */
+    @Query("UPDATE routines SET folder = :folder WHERE id = :id")
+    suspend fun setFolder(id: Long, folder: String?)
 
     @Query("SELECT position FROM routines WHERE id = :id")
     suspend fun positionOf(id: Long): Int?

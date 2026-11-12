@@ -103,6 +103,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.R
+import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
+import io.github.dimitrysaf.asko.lib.format.WeightUnit
+import io.github.dimitrysaf.asko.lib.format.sameWeight
+import io.github.dimitrysaf.asko.lib.format.weightUnitSymbol
+import io.github.dimitrysaf.asko.lib.format.weightValue
 import io.github.dimitrysaf.asko.components.ExerciseThumbnail
 import io.github.dimitrysaf.asko.components.DurationInput
 import io.github.dimitrysaf.asko.components.rememberDurationInputState
@@ -525,22 +530,30 @@ private fun ExerciseBlock(
     }
 }
 
-/** Whether sets count reps or time, full width. Only shown while the exercise is open. */
+/** Whether sets count reps, time, or a distance (with its time), full width. Only shown while the exercise is open. */
 @Composable
 private fun TrackSelector(item: DraftExercise, viewModel: PlanEditorViewModel, modifier: Modifier = Modifier) {
+    val tracks = Track.entries
     SingleChoiceSegmentedButtonRow(modifier.fillMaxWidth()) {
-        SegmentedButton(
-            selected = !item.timed,
-            onClick = { viewModel.setTimed(item.key, false) },
-            shape = SegmentedButtonDefaults.itemShape(0, 2),
-            modifier = Modifier.weight(1f),
-        ) { Text(stringResource(R.string.routine_track_reps)) }
-        SegmentedButton(
-            selected = item.timed,
-            onClick = { viewModel.setTimed(item.key, true) },
-            shape = SegmentedButtonDefaults.itemShape(1, 2),
-            modifier = Modifier.weight(1f),
-        ) { Text(stringResource(R.string.routine_track_time)) }
+        tracks.forEachIndexed { index, track ->
+            SegmentedButton(
+                selected = item.track == track,
+                onClick = { viewModel.setTrack(item.key, track) },
+                shape = SegmentedButtonDefaults.itemShape(index, tracks.size),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    stringResource(
+                        when (track) {
+                            Track.REPS -> R.string.routine_track_reps
+                            Track.TIME -> R.string.routine_track_time
+                            Track.DISTANCE -> R.string.routine_track_distance
+                        },
+                    ),
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -590,7 +603,10 @@ private fun SetTable(item: DraftExercise, bodyweight: Boolean, viewModel: PlanEd
     // Rows already there when the table appears are shown as they are; only later ones animate in.
     val initialKeys = remember { item.sets.map { it.key }.toSet() }
     Column(Modifier.padding(top = Dimens.SpaceS)) {
-        if (editable && !item.timed) {
+        if (item.distance) {
+            // A distance and its time; read-only, the pace too, and only the columns with values.
+            DistanceTitles(if (editable) DistanceColumns() else distanceColumns(item.sets.map { it.set }))
+        } else if (editable && !item.timed) {
             // Open: tapping the Reps title switches between one number and a range.
             Row(
                 modifier = Modifier.heightIn(min = ButtonDefaults.MinHeight),
@@ -646,6 +662,10 @@ private fun SetRow(
     onRemove: () -> Unit,
 ) {
     val set = draft.set
+    if (item.distance && !editable) {
+        DistancePreviewRow(set, number, distanceColumns(item.sets.map { it.set }))
+        return
+    }
     if (!editable) {
         SetPreviewRow(set, number, item.timed, item.repRange, bodyweight, previewColumns(item.sets.map { it.set }, item.timed))
         return
@@ -668,6 +688,11 @@ private fun SetRow(
                 onRemove = onRemove,
             )
         val cell = Modifier.weight(1f)
+        if (item.distance) {
+            DistanceField(set.distanceMeters, { viewModel.setDistance(item.key, draft.key, it) }, cell)
+            TimeField(seconds = set.durationSeconds, onPick = { viewModel.setDuration(item.key, draft.key, it) }, modifier = cell)
+            return@Row
+        }
         when {
             set.type == SetType.FAILURE -> FixedField(stringResource(R.string.set_failure_target), cell)
             item.timed ->
@@ -865,12 +890,6 @@ internal fun WholeNumberField(value: String, onValue: (String) -> Unit, modifier
     )
 }
 
-/** Common weights in the weight sheet: light dumbbell pairs, plate steps, heavier bars. */
-internal val WeightPresets = listOf(
-    1.0, 2.0, 2.5, 4.0, 5.0, 6.0, 7.5, 8.0, 10.0, 12.0, 12.5, 14.0, 15.0, 16.0, 17.5, 20.0,
-    22.5, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0,
-)
-
 /**
  * The weight cell: read-only, tap it for the weight sheet. Shows the unit with the value: "8 kg",
  * "+8 kg" for bodyweight exercises (the added weight), "BW" for body weight, "-" for no target.
@@ -901,7 +920,10 @@ internal fun WeightField(
     }
 }
 
-/** Any weight, typed into a standard dialog. Set returns it; the field opens with the keyboard up. */
+/**
+ * Any weight, typed into a standard dialog in the app's unit. Set returns it in kilos; the field
+ * opens with the keyboard up.
+ */
 @Composable
 internal fun CustomWeightDialog(
     initialKg: Double?,
@@ -909,8 +931,9 @@ internal fun CustomWeightDialog(
     onDismiss: () -> Unit,
     title: String = stringResource(R.string.weight_custom_title),
 ) {
-    var text by rememberSaveable { mutableStateOf(initialKg?.takeIf { it > 0 }?.let(::formatKg).orEmpty()) }
-    val kg = text.toDoubleOrNull()?.takeIf { it > 0 }
+    val unit = LocalWeightUnit.current
+    var text by rememberSaveable { mutableStateOf(initialKg?.takeIf { it > 0 }?.let(unit::number).orEmpty()) }
+    val kg = text.toDoubleOrNull()?.takeIf { it > 0 }?.let(unit::toKg)
     val focus = remember { FocusRequester() }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -922,7 +945,7 @@ internal fun CustomWeightDialog(
                     val cleaned = input.replace(',', '.')
                     if (cleaned.length <= 6 && cleaned.all { it.isDigit() || it == '.' } && cleaned.count { it == '.' } <= 1) text = cleaned
                 },
-                label = { Text(stringResource(R.string.routine_col_kg)) },
+                label = { Text(weightUnitSymbol(unit)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { kg?.let(onPick) }),
@@ -949,11 +972,13 @@ private sealed interface WeightChoice {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss: () -> Unit) {
-    val isCustom = current != null && current != 0.0 && current !in WeightPresets
+    val unit = LocalWeightUnit.current
+    val presets = unit.presetsKg
+    val isCustom = current != null && current != 0.0 && presets.none { sameWeight(it, current) }
     var typing by rememberSaveable { mutableStateOf(false) }
     var calculating by rememberSaveable { mutableStateOf(false) }
     val choices: List<WeightChoice> =
-        listOf(WeightChoice.Value(null), WeightChoice.Value(0.0)) + WeightPresets.map { WeightChoice.Value(it) } + WeightChoice.Custom
+        listOf(WeightChoice.Value(null), WeightChoice.Value(0.0)) + presets.map { WeightChoice.Value(it) } + WeightChoice.Custom
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier
@@ -968,7 +993,7 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
                 modifier = Modifier.padding(bottom = Dimens.SpaceXs),
             )
             Text(
-                stringResource(R.string.weight_hint),
+                stringResource(if (unit == WeightUnit.LB) R.string.weight_hint_lb else R.string.weight_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = Dimens.SpaceM),
@@ -1004,7 +1029,7 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
             }
             choices.forEachIndexed { index, choice ->
                 val selected = when (choice) {
-                    is WeightChoice.Value -> current == choice.kg
+                    is WeightChoice.Value -> sameWeight(current, choice.kg)
                     WeightChoice.Custom -> isCustom
                 }
                 SegmentedListItem(
@@ -1027,11 +1052,11 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
                                 is WeightChoice.Value -> when (choice.kg) {
                                     null -> stringResource(R.string.weight_no_target)
                                     0.0 -> stringResource(R.string.weight_bodyweight)
-                                    else -> stringResource(R.string.routine_kg_value, formatKg(choice.kg))
+                                    else -> weightValue(choice.kg)
                                 }
                                 // A custom weight already set shows on its row.
                                 WeightChoice.Custom ->
-                                    if (isCustom) stringResource(R.string.routine_kg_value, formatKg(current!!)) else stringResource(R.string.weight_custom)
+                                    if (isCustom) weightValue(current!!) else stringResource(R.string.weight_custom)
                             },
                         )
                     },

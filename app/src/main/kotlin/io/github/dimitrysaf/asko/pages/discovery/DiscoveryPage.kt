@@ -1,5 +1,11 @@
 package io.github.dimitrysaf.asko.pages.discovery
 
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.foundation.layout.PaddingValues
+import io.github.dimitrysaf.asko.pages.routines.RoutineNameDialog
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import java.text.NumberFormat
@@ -44,17 +50,48 @@ import io.github.dimitrysaf.asko.components.ExerciseBrowser
 import io.github.dimitrysaf.asko.components.ExerciseBrowserSkeleton
 import io.github.dimitrysaf.asko.lib.di.appViewModel
 
-/** Browse and search the ExerciseDB exercise library. */
+/** Browse and search the exercise libraries: favourites, recently used, then A–Z; Create makes your own. */
 @Composable
-fun DiscoveryPage(onExerciseClick: (exerciseId: String) -> Unit) {
-    val viewModel = appViewModel { DiscoveryViewModel(it.exerciseRepository) }
+fun DiscoveryPage(onExerciseClick: (exerciseId: String) -> Unit, onCreateExercise: (name: String) -> Unit) {
+    val viewModel = appViewModel { DiscoveryViewModel(it.exerciseRepository, it.favouritesRepository, it.workoutRepository) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val favourites by viewModel.favourites.collectAsStateWithLifecycle()
+    val recent by viewModel.recent.collectAsStateWithLifecycle()
     val download by viewModel.download.collectAsStateWithLifecycle()
     // Once a download has shown, it stays until the list is there (no skeleton in between).
     var lastDownload by remember { mutableStateOf<DownloadProgress?>(null) }
     download?.let { lastDownload = it }
 
-    Scaffold { padding ->
+    // Create asks the name first, as Create routine does.
+    var naming by rememberSaveable { mutableStateOf(false) }
+    // The Create button shows its label only while the list is at its top; scrolled, just the icon.
+    var atTop by remember { mutableStateOf(true) }
+    if (naming) {
+        RoutineNameDialog(
+            initialName = "",
+            title = stringResource(R.string.custom_name_title),
+            placeholder = stringResource(R.string.custom_name_hint),
+            confirmLabel = stringResource(R.string.action_create),
+            onConfirm = { name ->
+                naming = false
+                onCreateExercise(name)
+            },
+            onDismiss = { naming = false },
+        )
+    }
+    Scaffold(
+        // Make your own: Material's extended floating button, once the library is there.
+        floatingActionButton = {
+            if (state is DiscoveryState.Loaded) {
+                ExtendedFloatingActionButton(
+                    onClick = { naming = true },
+                    expanded = atTop,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.custom_create)) },
+                    text = { Text(stringResource(R.string.custom_create)) },
+                )
+            }
+        },
+    ) { padding ->
         // Keep the results above the keyboard while typing.
         val modifier = Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
         // The results list takes the padding itself, so it scrolls right up to the bars.
@@ -76,7 +113,14 @@ fun DiscoveryPage(onExerciseClick: (exerciseId: String) -> Unit) {
                 s.exercises,
                 onExerciseClick = { onExerciseClick(it.id) },
                 modifier = listModifier,
-                contentPadding = padding,
+                favourites = favourites,
+                recent = recent.orEmpty(),
+                onAtTop = { atTop = it },
+                // Room under the last row for the Create button.
+                contentPadding = PaddingValues(
+                    top = padding.calculateTopPadding(),
+                    bottom = padding.calculateBottomPadding() + FabRoom,
+                ),
             )
         }
     }
@@ -140,3 +184,6 @@ private fun timeLeft(remainingMs: Long?): String = when {
         pluralStringResource(R.plurals.download_minutes_left, minutes, minutes)
     }
 }
+
+/** The extended floating button's height and its margin. */
+private val FabRoom = 88.dp

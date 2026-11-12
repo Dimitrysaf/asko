@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import io.github.dimitrysaf.asko.data.importing.ImportCounts
+import io.github.dimitrysaf.asko.data.importing.WorkoutImporter
+
 import android.content.ContentResolver
 import android.net.Uri
 import androidx.compose.runtime.getValue
@@ -17,10 +20,15 @@ import java.io.IOException
 sealed interface BackupResult {
     data class BackedUp(val counts: BackupCounts) : BackupResult
     data class Restored(val counts: BackupCounts) : BackupResult
+    data class Imported(val counts: ImportCounts) : BackupResult
     data object Failed : BackupResult
 }
 
-class SettingsViewModel(val settings: SettingsRepository, private val backups: BackupRepository) : ViewModel() {
+class SettingsViewModel(
+    val settings: SettingsRepository,
+    private val backups: BackupRepository,
+    private val importer: WorkoutImporter,
+) : ViewModel() {
     /** A backup or restore is running (its buttons wait). */
     var busy by mutableStateOf(false)
         private set
@@ -37,6 +45,12 @@ class SettingsViewModel(val settings: SettingsRepository, private val backups: B
     fun restore(resolver: ContentResolver, uri: Uri) = run {
         val input = resolver.openInputStream(uri) ?: throw IOException("Can't read $uri")
         BackupResult.Restored(input.use { backups.restore(it) })
+    }
+
+    /** Adds the workouts in a Strong or Hevy CSV export. */
+    fun importWorkouts(resolver: ContentResolver, uri: Uri) = run {
+        val input = resolver.openInputStream(uri) ?: throw IOException("Can't read $uri")
+        BackupResult.Imported(input.use { importer.import(it) })
     }
 
     fun resultShown() {

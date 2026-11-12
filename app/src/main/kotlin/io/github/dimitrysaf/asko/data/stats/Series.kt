@@ -53,3 +53,35 @@ fun List<Workout>.trainingSeries(
     }
     return TrainingSeries(timeline, sets.toList(), reps.toList(), minutes.toList(), weight.toList())
 }
+
+/** What the routine chart shows. */
+enum class RoutineMetric { VOLUME, REPS, DURATION }
+
+/**
+ * Workouts done from the routine [routineName] (as named when done) over [range] up to [today]:
+ * per bucket, the average of [metric] per workout (volume: kilos lifted, reps × weight; reps;
+ * duration in minutes, from workouts with a known length), 0 where none was done.
+ */
+fun List<Workout>.routineSeries(
+    routineName: String,
+    metric: RoutineMetric,
+    range: StatsRange,
+    today: LocalDate,
+    firstDayOfWeek: DayOfWeek,
+): Pair<Timeline, List<Double?>> {
+    val done = filter { it.routineName == routineName }
+    val timeline = timeline(range, today, done.minOfOrNull { it.startedAt }?.localDate(), firstDayOfWeek)
+    val values = List(timeline.starts.size) { mutableListOf<Double>() }
+    done.forEach { w ->
+        val i = timeline.indexOf(w.startedAt.localDate()) ?: return@forEach
+        val sets = w.exercises.flatMap { it.sets }
+        val value = when (metric) {
+            RoutineMetric.VOLUME -> sets.sumOf { (it.reps ?: 0) * (it.weightKg ?: 0.0) }
+            RoutineMetric.REPS -> sets.sumOf { it.reps ?: 0 }.toDouble()
+            RoutineMetric.DURATION -> w.duration?.seconds?.div(60.0) ?: return@forEach
+        }
+        values[i] += value
+    }
+    // 0 where none was done, like the other charts (a line needs two points to show at all).
+    return timeline to values.map { if (it.isEmpty()) 0.0 else it.average() }
+}

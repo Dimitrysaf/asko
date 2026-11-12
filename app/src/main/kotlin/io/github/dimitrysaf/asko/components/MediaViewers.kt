@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.components
 
+import io.github.dimitrysaf.asko.data.model.mainMuscles
+import io.github.dimitrysaf.asko.data.model.otherMuscles
 import io.github.dimitrysaf.asko.data.model.Exercise
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.foundation.background
@@ -73,10 +75,12 @@ fun ImageViewer(url: String, contentDescription: String?, onDismiss: () -> Unit)
     }
 }
 
-/** An exercise's demo full screen: its animation, or its photos in turn. */
+/** An exercise's demo full screen: your media first (swiped through), its animation, or its photos in turn. */
 @Composable
 fun ExerciseDemoViewer(exercise: Exercise, onDismiss: () -> Unit) {
-    if (exercise.animationUrl.isNotEmpty() || exercise.photos.isEmpty()) {
+    if (ownMediaOf(exercise).isNotEmpty() || exercise.isDrawn || (LocalShowMuscles.current && (exercise.mainMuscles + exercise.otherMuscles).isNotEmpty())) {
+        FullScreenViewer(onDismiss) { ExerciseDemo(exercise, RectangleShape, Modifier.fillMaxSize(), fit = true) }
+    } else if (exercise.animationUrl.isNotEmpty() || exercise.photos.isEmpty()) {
         ImageViewer(exercise.animationUrl, exercise.name, onDismiss)
     } else {
         FullScreenViewer(onDismiss) { ExerciseDemo(exercise, RectangleShape, Modifier.fillMaxSize()) }

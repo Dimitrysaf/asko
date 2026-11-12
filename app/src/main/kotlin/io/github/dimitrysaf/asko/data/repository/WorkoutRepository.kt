@@ -27,6 +27,13 @@ class WorkoutRepository(private val dao: WorkoutDao, private val notes: NoteRepo
     /** Finished workouts, newest first (from the cache). */
     val history: Flow<List<Workout>> = historyState.filterNotNull()
 
+    /**
+     * The exercises done most recently, last done first, each once (up to [RECENT_EXERCISES]);
+     * null until the history is first read.
+     */
+    val recentExerciseIdsState: StateFlow<List<String>?> =
+        historyState.map { it?.recentExerciseIds() }.stateIn(scope, SharingStarted.Lazily, null)
+
     /** Saves an edited workout: when it started and ended, and what was done. */
     suspend fun update(id: Long, startedAt: Instant, endedAt: Instant, exercises: List<RoutineExercise>) =
         dao.replace(id, startedAt.toEpochMilli(), endedAt.toEpochMilli(), exercises.toWorkoutEntities())
@@ -61,3 +68,10 @@ class WorkoutRepository(private val dao: WorkoutDao, private val notes: NoteRepo
             exercises.toWorkoutEntities(),
         )
 }
+
+/** How many exercises "Recently used" lists. */
+private const val RECENT_EXERCISES = 5
+
+/** From the newest workout back ([this] is newest first), each exercise once. */
+private fun List<Workout>.recentExerciseIds(): List<String> =
+    asSequence().flatMap { w -> w.exercises.asSequence().map { it.exerciseId } }.distinct().take(RECENT_EXERCISES).toList()

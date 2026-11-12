@@ -1,6 +1,17 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import io.github.dimitrysaf.asko.data.settings.RepCounterMode
+import io.github.dimitrysaf.asko.components.selectableSegmentedShapes
+
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import io.github.dimitrysaf.asko.lib.format.WeightUnit
+import io.github.dimitrysaf.asko.lib.format.weightUnitSymbol
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.ui.platform.LocalConfiguration
 import io.github.dimitrysaf.asko.components.DayMarkIcon
@@ -61,6 +72,14 @@ import io.github.dimitrysaf.asko.components.pageContentPadding
 import io.github.dimitrysaf.asko.components.segmentedShapes
 import io.github.dimitrysaf.asko.constants.Dimens
 import io.github.dimitrysaf.asko.data.backup.BackupCounts
+import io.github.dimitrysaf.asko.AskoApplication
+import io.github.dimitrysaf.asko.lib.health.HealthConnectSync
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import io.github.dimitrysaf.asko.data.importing.ImportCounts
+import io.github.dimitrysaf.asko.data.importing.ImportSource
 import io.github.dimitrysaf.asko.lib.di.appViewModel
 import io.github.dimitrysaf.asko.pages.routines.DurationSheet
 import io.github.dimitrysaf.asko.pages.routines.RestOptions
@@ -68,20 +87,28 @@ import io.github.dimitrysaf.asko.pages.routines.restLabel
 import java.time.LocalDate
 
 /**
- * Settings, from the Routines tab's top bar. Workouts: the rest new exercises start with, buzzing
- * when a rest is over, keeping the screen on. Your data: back up routines and history to a file,
+ * Settings, from the Routines tab's top bar. Workouts: kg or lb, the rest new exercises start
+ * with, buzzing or a sound when a rest is over, keeping the screen on. Your data: back up routines and history to a file,
  * or restore them from one. About: the version and where the exercises come from.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsPage(onBack: () -> Unit) {
-    val viewModel = appViewModel { SettingsViewModel(it.settings, it.backupRepository) }
+    val viewModel = appViewModel { SettingsViewModel(it.settings, it.backupRepository, it.workoutImporter) }
     val settings = viewModel.settings
     val defaultRest by settings.defaultRestSeconds.collectAsStateWithLifecycle()
     val buzz by settings.restBuzz.collectAsStateWithLifecycle()
+    val sound by settings.restSound.collectAsStateWithLifecycle()
+    val weightUnit by settings.weightUnit.collectAsStateWithLifecycle()
     val keepScreenOn by settings.keepScreenOn.collectAsStateWithLifecycle()
     val editableRows by settings.editableWorkoutRows.collectAsStateWithLifecycle()
     var choosingRest by rememberSaveable { mutableStateOf(false) }
+    var choosingCounter by rememberSaveable { mutableStateOf(false) }
+    val repCounter by settings.repCounter.collectAsStateWithLifecycle()
+    // The camera counter needs the camera: asked when it's picked, kept off if refused.
+    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) settings.setRepCounter(RepCounterMode.CAMERA)
+    }
     var restoreFrom by rememberSaveable { mutableStateOf<String?>(null) }
     val resolver = LocalContext.current.contentResolver
     val context = LocalContext.current
@@ -94,11 +121,16 @@ fun SettingsPage(onBack: () -> Unit) {
     val openFrom = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) restoreFrom = uri.toString()
     }
+    // Adds to History, replacing nothing: no need to ask first.
+    val importFrom = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importWorkouts(resolver, uri)
+    }
 
     val message = viewModel.result?.let { result ->
         when (result) {
             is BackupResult.BackedUp -> stringResource(R.string.settings_backed_up, counts(result.counts))
             is BackupResult.Restored -> stringResource(R.string.settings_restored, counts(result.counts))
+            is BackupResult.Imported -> imported(result.counts)
             BackupResult.Failed -> stringResource(R.string.settings_backup_failed)
         }
     }
@@ -120,9 +152,29 @@ fun SettingsPage(onBack: () -> Unit) {
         ) {
             item(key = "workouts") {
                 Section(stringResource(R.string.settings_workouts)) {
+                    // kg | lb, right in the row: two choices need no sheet.
+                    ListItem(
+                        modifier = Modifier.clip(segmentedShapes(0, 9).shape),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_weight_unit_hint)) },
+                        trailingContent = {
+                            SingleChoiceSegmentedButtonRow {
+                                WeightUnit.entries.forEachIndexed { index, unit ->
+                                    SegmentedButton(
+                                        selected = unit == weightUnit,
+                                        onClick = { settings.setWeightUnit(unit) },
+                                        shape = SegmentedButtonDefaults.itemShape(index, WeightUnit.entries.size),
+                                        icon = {},
+                                        label = { Text(weightUnitSymbol(unit)) },
+                                    )
+                                }
+                            }
+                        },
+                        headlineContent = { Text(stringResource(R.string.settings_weight_unit)) },
+                    )
                     SegmentedListItem(
                         onClick = { choosingRest = true },
-                        shapes = segmentedShapes(0, 4),
+                        shapes = segmentedShapes(1, 9),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_default_rest_hint)) },
                         trailingContent = { Text(restLabel(defaultRest), style = MaterialTheme.typography.labelLarge) },
@@ -131,16 +183,25 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         checked = buzz,
                         onCheckedChange = settings::setRestBuzz,
-                        shapes = segmentedShapes(1, 4),
+                        shapes = segmentedShapes(2, 9),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_buzz_hint)) },
                         trailingContent = { Switch(checked = buzz, onCheckedChange = null) },
                         content = { Text(stringResource(R.string.settings_rest_buzz)) },
                     )
                     SegmentedListItem(
+                        checked = sound,
+                        onCheckedChange = settings::setRestSound,
+                        shapes = segmentedShapes(3, 9),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_rest_sound_hint)) },
+                        trailingContent = { Switch(checked = sound, onCheckedChange = null) },
+                        content = { Text(stringResource(R.string.settings_rest_sound)) },
+                    )
+                    SegmentedListItem(
                         checked = keepScreenOn,
                         onCheckedChange = settings::setKeepScreenOn,
-                        shapes = segmentedShapes(2, 4),
+                        shapes = segmentedShapes(4, 9),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_keep_screen_on_hint)) },
                         trailingContent = { Switch(checked = keepScreenOn, onCheckedChange = null) },
@@ -149,11 +210,39 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         checked = editableRows,
                         onCheckedChange = settings::setEditableWorkoutRows,
-                        shapes = segmentedShapes(3, 4),
+                        shapes = segmentedShapes(5, 9),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_editable_rows_hint)) },
                         trailingContent = { Switch(checked = editableRows, onCheckedChange = null) },
                         content = { Text(stringResource(R.string.settings_editable_rows)) },
+                    )
+                    SegmentedListItem(
+                        onClick = { choosingCounter = true },
+                        shapes = segmentedShapes(6, 9),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_rep_counter_hint)) },
+                        trailingContent = { Text(stringResource(repCounterName(repCounter)), style = MaterialTheme.typography.labelLarge) },
+                        content = { Text(stringResource(R.string.settings_rep_counter)) },
+                    )
+                    val sayReps by settings.sayReps.collectAsStateWithLifecycle()
+                    SegmentedListItem(
+                        checked = sayReps,
+                        onCheckedChange = settings::setSayReps,
+                        shapes = segmentedShapes(7, 9),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_say_reps_hint)) },
+                        trailingContent = { Switch(checked = sayReps, onCheckedChange = null) },
+                        content = { Text(stringResource(R.string.settings_say_reps)) },
+                    )
+                    val pauseOutOfView by settings.pauseOutOfView.collectAsStateWithLifecycle()
+                    SegmentedListItem(
+                        checked = pauseOutOfView,
+                        onCheckedChange = settings::setPauseOutOfView,
+                        shapes = segmentedShapes(8, 9),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_pause_out_of_view_hint)) },
+                        trailingContent = { Switch(checked = pauseOutOfView, onCheckedChange = null) },
+                        content = { Text(stringResource(R.string.settings_pause_out_of_view)) },
                     )
                 }
             }
@@ -165,6 +254,22 @@ fun SettingsPage(onBack: () -> Unit) {
             item(key = "sources") {
                 Section(stringResource(R.string.settings_sources)) {
                     ExerciseSources(settings)
+                    val showMuscles by settings.showMuscles.collectAsStateWithLifecycle()
+                    Spacer(Modifier.height(Dimens.SpaceM))
+                    SegmentedListItem(
+                        checked = showMuscles,
+                        onCheckedChange = settings::setShowMuscles,
+                        shapes = segmentedShapes(0, 1),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_show_muscles_hint)) },
+                        trailingContent = { Switch(checked = showMuscles, onCheckedChange = null) },
+                        content = { Text(stringResource(R.string.settings_show_muscles)) },
+                    )
+                }
+            }
+            item(key = "health") {
+                Section(stringResource(R.string.settings_health_section)) {
+                    HealthConnectSetting(settings, (context.applicationContext as AskoApplication).container.healthConnect)
                 }
             }
             item(key = "data") {
@@ -172,7 +277,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         onClick = { saveTo.launch("asko-backup-${LocalDate.now()}.json") },
                         enabled = !viewModel.busy,
-                        shapes = segmentedShapes(0, 2),
+                        shapes = segmentedShapes(0, 3),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_back_up_hint)) },
                         content = { Text(stringResource(R.string.settings_back_up)) },
@@ -180,10 +285,18 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         onClick = { openFrom.launch(arrayOf(BACKUP_TYPE, "*/*")) },
                         enabled = !viewModel.busy,
-                        shapes = segmentedShapes(1, 2),
+                        shapes = segmentedShapes(1, 3),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_restore_hint)) },
                         content = { Text(stringResource(R.string.settings_restore)) },
+                    )
+                    SegmentedListItem(
+                        onClick = { importFrom.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) },
+                        enabled = !viewModel.busy,
+                        shapes = segmentedShapes(2, 3),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_import_hint)) },
+                        content = { Text(stringResource(R.string.settings_import)) },
                     )
                 }
             }
@@ -208,6 +321,17 @@ fun SettingsPage(onBack: () -> Unit) {
         }
     }
 
+    if (choosingCounter) {
+        RepCounterSheet(
+            current = repCounter,
+            onPick = { mode ->
+                choosingCounter = false
+                val cameraAllowed = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                if (mode == RepCounterMode.CAMERA && !cameraAllowed) askCamera.launch(Manifest.permission.CAMERA) else settings.setRepCounter(mode)
+            },
+            onDismiss = { choosingCounter = false },
+        )
+    }
     if (choosingRest) {
         DurationSheet(
             title = stringResource(R.string.settings_default_rest),
@@ -350,11 +474,121 @@ private fun ExerciseSources(settings: SettingsRepository) {
 private fun sourceName(source: ExerciseSource) = when (source) {
     ExerciseSource.EXERCISEDB -> R.string.source_exercisedb
     ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db
+    ExerciseSource.CUSTOM -> R.string.source_custom
 }
 
 private fun sourceDescription(source: ExerciseSource) = when (source) {
     ExerciseSource.EXERCISEDB -> R.string.source_exercisedb_desc
     ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db_desc
+    ExerciseSource.CUSTOM -> R.string.source_custom_desc
+}
+
+/**
+ * Health Connect: a switch to send finished workouts and body weight there. Turning it on asks
+ * Health Connect's permissions first; permissions taken back there show it as off. Greyed out
+ * where Health Connect isn't.
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun HealthConnectSetting(settings: SettingsRepository, health: HealthConnectSync) {
+    val on by settings.healthConnect.collectAsStateWithLifecycle()
+    val available = remember { health.available }
+    val scope = rememberCoroutineScope()
+    var granted by remember { mutableStateOf(true) }
+    val ask = rememberLauncherForActivityResult(PermissionController.createRequestPermissionResultContract()) { given ->
+        granted = given.containsAll(HealthConnectSync.PERMISSIONS)
+        if (granted) settings.setHealthConnect(true)
+    }
+    LaunchedEffect(on) { if (on && available) granted = health.hasPermissions() }
+    val checked = on && available && granted
+    SegmentedListItem(
+        checked = checked,
+        onCheckedChange = { turnOn ->
+            if (!available) {
+                // Greyed-out switch: nothing to turn on here.
+            } else if (!turnOn) {
+                settings.setHealthConnect(false)
+            } else {
+                scope.launch { if (health.hasPermissions()) settings.setHealthConnect(true) else ask.launch(HealthConnectSync.PERMISSIONS) }
+            }
+        },
+        shapes = segmentedShapes(0, if (available) 2 else 1),
+        colors = itemColors(),
+        supportingContent = {
+            Text(
+                stringResource(
+                    when {
+                        !available -> R.string.settings_health_missing
+                        else -> R.string.settings_health_hint
+                    },
+                ),
+            )
+        },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null, enabled = available) },
+        content = { Text(stringResource(R.string.settings_health)) },
+    )
+    // Health Connect itself, to manage what Asko may write and the data there.
+    if (available) {
+        val context = LocalContext.current
+        SegmentedListItem(
+            // Its main screen: app permissions, and the data each app wrote (an app's own page there
+            // is for the system only).
+            onClick = { context.startActivity(android.content.Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) },
+            shapes = segmentedShapes(1, 2),
+            colors = itemColors(),
+            supportingContent = { Text(stringResource(R.string.settings_health_manage_hint)) },
+            content = { Text(stringResource(R.string.settings_health_manage)) },
+        )
+    }
+}
+
+/**
+ * How reps are counted, picked from one selectable list: Off, Metronome (aloud, at a pace) or
+ * Camera (watches you), each with a line on what it does.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun RepCounterSheet(current: RepCounterMode, onPick: (RepCounterMode) -> Unit, onDismiss: () -> Unit) {
+    val modes = RepCounterMode.entries
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(start = Dimens.PageGutter, end = Dimens.PageGutter, bottom = Dimens.SpaceL),
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+        ) {
+            Text(
+                stringResource(R.string.settings_rep_counter),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = Dimens.SpaceM),
+            )
+            modes.forEachIndexed { index, mode ->
+                val selected = mode == current
+                SegmentedListItem(
+                    selected = selected,
+                    onClick = { onPick(mode) },
+                    shapes = selectableSegmentedShapes(index, modes.size),
+                    supportingContent = { Text(stringResource(repCounterDescription(mode))) },
+                    trailingContent = if (selected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                    content = { Text(stringResource(repCounterName(mode))) },
+                )
+            }
+        }
+    }
+}
+
+private fun repCounterName(mode: RepCounterMode) = when (mode) {
+    RepCounterMode.OFF -> R.string.rep_counter_off
+    RepCounterMode.METRONOME -> R.string.rep_counter_metronome
+    RepCounterMode.CAMERA -> R.string.rep_counter_camera
+}
+
+private fun repCounterDescription(mode: RepCounterMode) = when (mode) {
+    RepCounterMode.OFF -> R.string.rep_counter_off_desc
+    RepCounterMode.METRONOME -> R.string.rep_counter_metronome_desc
+    RepCounterMode.CAMERA -> R.string.rep_counter_camera_desc
 }
 
 /** A titled group of settings, as one segmented list. */
@@ -384,3 +618,15 @@ private fun counts(counts: BackupCounts): String = stringResource(
 )
 
 private const val BACKUP_TYPE = "application/json"
+
+/** "Added 52 workouts from Strong · 3 already there · 12 new exercises". */
+@Composable
+private fun imported(counts: ImportCounts): String = listOfNotNull(
+    stringResource(
+        R.string.settings_imported,
+        pluralStringResource(R.plurals.settings_workout_count, counts.workouts, counts.workouts),
+        stringResource(if (counts.source == ImportSource.STRONG) R.string.import_strong else R.string.import_hevy),
+    ),
+    counts.skipped.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.settings_import_skipped, it, it) },
+    counts.newExercises.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.settings_import_new_exercises, it, it) },
+).joinToString(" · ")

@@ -1,0 +1,4 @@
+Muscle images from wger (https://wger.de, https://github.com/wger-project/wger):
+the front and back muscular system and one image per muscle, as served by wger's
+API (https://wger.de/api/v2/muscle/). Licensed CC BY-SA 3.0 by the wger project.
+Metadata stripped; drawings unchanged.

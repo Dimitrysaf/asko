@@ -1,11 +1,15 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import io.github.dimitrysaf.asko.data.stats.RoutineMetric
+import io.github.dimitrysaf.asko.data.stats.routineSeries
 import io.github.dimitrysaf.asko.components.EmptyState
 import androidx.compose.ui.res.painterResource
 import kotlin.math.roundToInt
 import java.text.NumberFormat
 import io.github.dimitrysaf.asko.pages.routines.formatSeconds
-import io.github.dimitrysaf.asko.pages.routines.formatKg
+import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
+import io.github.dimitrysaf.asko.lib.format.formatAmount
+import io.github.dimitrysaf.asko.lib.format.weightValue
 import androidx.compose.ui.platform.LocalResources
 import android.content.res.Resources
 import androidx.compose.foundation.background
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -97,17 +102,20 @@ fun WeightChart(history: List<Workout>, exerciseId: String? = null) {
     val color = MaterialTheme.colorScheme.primary
     val resources = LocalResources.current
     val number = remember { NumberFormat.getIntegerInstance() }
+    val unit = LocalWeightUnit.current
     ChartCard(stringResource(if (exerciseId == null) R.string.stats_weight_lifted else R.string.stats_heaviest)) {
         RangePicker(range) { range = it }
-        val weights = series.weight.map { w -> w?.takeIf { it > 0 } }
-        if (weights.all { it == null }) {
+        // In the app's unit, so the chart's axis reads in it too.
+        // 0 where none was lifted, like the other charts (a line needs two points to show at all).
+        val weights = series.weight.map { w -> w?.takeIf { it > 0 }?.let(unit::fromKg) ?: 0.0 }
+        if (weights.all { it <= 0 }) {
             EmptyState(painterResource(R.drawable.ic_fitness), stringResource(R.string.stats_no_weight), compact = true)
         } else {
             AreaChart(
                 series = listOf(
-                    ChartSeries("weight", weights, color) { kg ->
-                        val shown = if (exerciseId == null) number.format(kg.roundToInt()) else formatKg((kg * 2).roundToInt() / 2.0)
-                        resources.getString(R.string.routine_kg_value, shown)
+                    ChartSeries("weight", weights, color) { value ->
+                        val shown = if (exerciseId == null) number.format(value.roundToInt()) else formatAmount((value * 2).roundToInt() / 2.0)
+                        resources.weightValue(shown, unit)
                     },
                 ),
                 labels = timelineLabels(series.timeline),
@@ -167,15 +175,94 @@ fun RangePicker(range: StatsRange, onRange: (StatsRange) -> Unit) {
 
 /** A titled chart with its controls, in a card. */
 @Composable
-fun ChartCard(title: String, content: @Composable () -> Unit) {
+fun ChartCard(title: String, action: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Column(Modifier.padding(Dimens.SpaceM), verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            if (action == null) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            } else {
+                // The card's own control sits in its top-right corner, beside the title.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    action()
+                }
+            }
             content()
+        }
+    }
+}
+
+/**
+ * How the workouts done from a routine ([routineName]) went, over a chosen range: Volume (weight
+ * lifted), Reps or Duration, one at a time, each point the average per workout in its day, week
+ * or month. Stats' chart design, in a card.
+ */
+@Composable
+fun RoutineChart(history: List<Workout>, routineName: String) {
+    var range by rememberSaveable { mutableStateOf(StatsRange.QUARTER) }
+    var metric by rememberSaveable { mutableStateOf(RoutineMetric.VOLUME) }
+    val (timeline, values) = remember(history, routineName, metric, range) {
+        history.routineSeries(routineName, metric, range, LocalDate.now(), firstDayOfWeek())
+    }
+    val unit = LocalWeightUnit.current
+    val resources = LocalResources.current
+    val number = remember { NumberFormat.getIntegerInstance() }
+    val color = when (metric) {
+        RoutineMetric.VOLUME -> MaterialTheme.colorScheme.primary
+        RoutineMetric.REPS -> MaterialTheme.colorScheme.tertiary
+        RoutineMetric.DURATION -> MaterialTheme.colorScheme.secondary
+    }
+    ChartCard(stringResource(R.string.routine_chart_title)) {
+        val metrics = RoutineMetric.entries
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            metrics.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = option == metric,
+                    onClick = { metric = option },
+                    shape = SegmentedButtonDefaults.itemShape(index, metrics.size),
+                    modifier = Modifier.weight(1f),
+                    icon = {},
+                ) {
+                    Text(
+                        stringResource(
+                            when (option) {
+                                RoutineMetric.VOLUME -> R.string.routine_metric_volume
+                                RoutineMetric.REPS -> R.string.routine_metric_reps
+                                RoutineMetric.DURATION -> R.string.routine_metric_duration
+                            },
+                        ),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        RangePicker(range) { range = it }
+        // Volume in the app's unit, so the chart's axis reads in it too.
+        val shown = if (metric == RoutineMetric.VOLUME) values.map { v -> v?.let(unit::fromKg) } else values
+        if (shown.all { it == null || it <= 0 }) {
+            EmptyState(painterResource(R.drawable.ic_fitness), stringResource(R.string.stats_nothing_done), compact = true)
+        } else {
+            AreaChart(
+                series = listOf(
+                    ChartSeries(metric.name, shown, color) { value ->
+                        when (metric) {
+                            RoutineMetric.VOLUME -> resources.weightValue(number.format(value.roundToInt()), unit)
+                            RoutineMetric.REPS -> count(resources, R.plurals.record_reps, value)
+                            RoutineMetric.DURATION -> formatSeconds((value * 60).roundToInt())
+                        }
+                    },
+                ),
+                labels = timelineLabels(timeline),
+            )
+            Text(
+                stringResource(R.string.routine_chart_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

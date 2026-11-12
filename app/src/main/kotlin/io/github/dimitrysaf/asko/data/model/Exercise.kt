@@ -26,6 +26,8 @@ data class Exercise(
     val source: ExerciseSource = ExerciseSource.EXERCISEDB,
     /** Photos of the movement in order (free-exercise-db: start and end position). */
     val photos: List<String> = emptyList(),
+    /** One of yours that you deleted: not browsed, but still shown where it was done. */
+    val retired: Boolean = false,
 ) {
     /** One picture for lists: the animation (its first frame is shown) or the first photo. */
     val stillUrl: String get() = animationUrl.ifEmpty { photos.firstOrNull().orEmpty() }
@@ -39,4 +41,7 @@ enum class ExerciseSource {
 
     /** free-exercise-db: two photos each, start and end position. */
     FREE_EXERCISE_DB,
+
+    /** Exercises you made, drawn from the muscles they work. */
+    CUSTOM,
 }

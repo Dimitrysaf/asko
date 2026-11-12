@@ -1,6 +1,27 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import kotlinx.coroutines.delay
+
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.foundation.clickable
+
+import io.github.dimitrysaf.asko.data.settings.RepCounterMode
+import androidx.compose.runtime.mutableIntStateOf
+
+import io.github.dimitrysaf.asko.pages.routines.DistanceField
+import io.github.dimitrysaf.asko.pages.routines.SetTimeSheet
+import io.github.dimitrysaf.asko.pages.routines.DistanceDialog
+import io.github.dimitrysaf.asko.pages.routines.DistanceColumns
+import io.github.dimitrysaf.asko.pages.routines.DistanceCells
+import io.github.dimitrysaf.asko.pages.routines.distanceColumns
+import io.github.dimitrysaf.asko.components.Shrug
+import io.github.dimitrysaf.asko.data.model.isEmptyLog
+import io.github.dimitrysaf.asko.pages.routines.ExercisePicker
+import io.github.dimitrysaf.asko.components.EmptyState
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material3.FilledTonalIconButton
 import io.github.dimitrysaf.asko.pages.routines.PreviewCell
+import io.github.dimitrysaf.asko.pages.routines.RangePreview
 import io.github.dimitrysaf.asko.pages.routines.PreviewColumns
 import io.github.dimitrysaf.asko.pages.routines.previewColumns
 import io.github.dimitrysaf.asko.pages.routines.weightText
@@ -19,6 +40,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import android.content.pm.PackageManager
 import android.Manifest
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.VibrationEffect
 import android.os.VibratorManager
 import androidx.activity.compose.BackHandler
@@ -76,6 +99,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -127,6 +151,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.R
 import io.github.dimitrysaf.asko.pages.routines.SupersetTitle
+import io.github.dimitrysaf.asko.components.LibraryDemo
 import io.github.dimitrysaf.asko.components.ExerciseThumbnail
 import io.github.dimitrysaf.asko.components.segmentedShapes
 import io.github.dimitrysaf.asko.components.RemoteImage
@@ -149,7 +174,7 @@ import io.github.dimitrysaf.asko.pages.routines.isBodyweight
 import io.github.dimitrysaf.asko.pages.routines.setNumbers
 import kotlin.math.ceil
 
-private val MediaMaxWidth = 480.dp
+internal val MediaMaxWidth = 480.dp
 
 /**
  * Doing a routine. On top Exit, the routine and the workout clock (red while paused), and Pause.
@@ -167,8 +192,9 @@ fun ActiveWorkoutPage(
     onFinished: (workoutId: Long?, routineName: String) -> Unit,
     onExerciseClick: (exerciseId: String) -> Unit,
 ) {
+    val emptyName = stringResource(R.string.empty_workout_name)
     val viewModel = appViewModel {
-        ActiveWorkoutViewModel(routineId, it.routineRepository, it.workoutRepository, it.exerciseRepository, it.activeWorkoutStore, it.workoutSession)
+        ActiveWorkoutViewModel(routineId, it.routineRepository, it.workoutRepository, it.exerciseRepository, it.activeWorkoutStore, it.workoutSession, it.settings, emptyName)
     }
     var confirmingExit by rememberSaveable { mutableStateOf(false) }
     var confirmingFinish by rememberSaveable { mutableStateOf(false) }
@@ -178,16 +204,83 @@ fun ActiveWorkoutPage(
     val keepScreenOn by settings.keepScreenOn.collectAsStateWithLifecycle()
     val editableRows by settings.editableWorkoutRows.collectAsStateWithLifecycle()
     val buzz by settings.restBuzz.collectAsStateWithLifecycle()
+    val sound by settings.restSound.collectAsStateWithLifecycle()
     if (keepScreenOn) KeepScreenOn()
-    VibrateOnAlerts(viewModel, enabled = buzz)
+    AlertOnCountdownEnd(viewModel, buzz = buzz, sound = sound)
     WorkoutNotification(viewModel)
     val resting = viewModel.countdown?.kind == CountdownKind.REST
     val motion = MaterialTheme.motionScheme
+    // Exercises can be added, swapped, removed and moved with Settings' editable rows on, and
+    // always in a workout started empty.
+    val canEditExercises = editableRows || viewModel.isEmptyWorkout
+    // The rep counter: on a set of reps not logged yet, outside a rest; it starts over for each set.
+    val repCounter by settings.repCounter.collectAsStateWithLifecycle()
+    val countingSet = viewModel.currentSet
+    var countingReps by remember(viewModel.exerciseIndex, viewModel.setIndex) { mutableStateOf(false) }
+    var counted by remember(viewModel.exerciseIndex, viewModel.setIndex) { mutableIntStateOf(0) }
+    val onRepsSet = viewModel.loaded && viewModel.countdown == null &&
+        viewModel.currentExercise?.let { !it.timed && !it.distance } == true && countingSet?.status == SetStatus.PENDING
+    val canCount = repCounter == RepCounterMode.METRONOME && onRepsSet
+    // The camera counter: the camera behind the whole screen while on a set, counting by itself.
+    val context = LocalContext.current
+    var cameraAllowed by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+    }
+    val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraAllowed = it }
+    LaunchedEffect(repCounter) { if (repCounter == RepCounterMode.CAMERA && !cameraAllowed) askCamera.launch(Manifest.permission.CAMERA) }
+    val cameraOn = repCounter == RepCounterMode.CAMERA && cameraAllowed && onRepsSet
+    var cameraReps by remember(viewModel.exerciseIndex, viewModel.setIndex) { mutableIntStateOf(0) }
+    // Out of the camera's view for a moment: the workout pauses (Settings › Pause when you're out
+    // of view) and resumes when it sees you again, if it was the camera that paused it.
+    val pauseOutOfView by settings.pauseOutOfView.collectAsStateWithLifecycle()
+    var inView by remember { mutableStateOf(false) }
+    var cameraPaused by remember { mutableStateOf(false) }
+    LaunchedEffect(cameraOn, inView, pauseOutOfView) {
+        val watching = cameraOn && pauseOutOfView
+        if (!watching || inView) {
+            if (cameraPaused && viewModel.paused) viewModel.togglePause()
+            cameraPaused = false
+            return@LaunchedEffect
+        }
+        delay(OUT_OF_VIEW_MS)
+        if (!viewModel.paused) {
+            viewModel.togglePause()
+            cameraPaused = true
+        }
+    }
+    /** A rep the camera saw: it's the set's reps so far; at the target, the set is logged. */
+    fun cameraRep(reps: Int) {
+        cameraReps = reps
+        val exercise = viewModel.currentExercise ?: return
+        val set = viewModel.currentSet ?: return
+        val target = set.target.repsMax ?: set.target.reps
+        if (target != null && reps >= target) viewModel.logReps(exercise.key, set.key, reps) else viewModel.setReps(exercise.key, set.key, reps)
+    }
+    /** Stops the counter; what it counted is logged as the set's reps. */
+    fun stopCounting() {
+        countingReps = false
+        val exercise = viewModel.currentExercise
+        val set = viewModel.currentSet
+        if (counted > 0 && exercise != null && set != null) viewModel.logReps(exercise.key, set.key, counted)
+    }
+    var managing by rememberSaveable { mutableStateOf(false) }
+    var adding by rememberSaveable { mutableStateOf(false) }
+    var swapping by rememberSaveable { mutableStateOf<Int?>(null) }
+    // A workout started empty opens on the picker.
+    var askedFirst by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(viewModel.loaded) {
+        if (viewModel.loaded && viewModel.isEmptyWorkout && viewModel.items.isEmpty() && !askedFirst) {
+            askedFirst = true
+            adding = true
+        }
+    }
 
     Scaffold(
         topBar = {
-            // Exit on the left, Pause / Resume on the right; it stays during the rest.
+            // Exit on the left, Pause / Resume on the right; it stays during the rest. Over the
+            // camera, see-through.
             TopAppBar(
+                colors = if (cameraOn) TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) else TopAppBarDefaults.topAppBarColors(),
                 navigationIcon = {
                     ControlIconButton(
                         icon = painterResource(R.drawable.ic_exit),
@@ -210,6 +303,18 @@ fun ActiveWorkoutPage(
         },
         bottomBar = { WorkoutControls(viewModel = viewModel, onFinish = finish) },
     ) { padding ->
+      Box(Modifier.fillMaxSize()) {
+        // Camera counter: the front camera fills the screen behind it all, under a wash of the
+        // page's colour so the text stays readable, your body drawn over it.
+        if (cameraOn) {
+            CameraReps(
+                setKey = viewModel.exerciseIndex to viewModel.setIndex,
+                onRep = ::cameraRep,
+                onInView = { inView = it },
+                wash = MaterialTheme.colorScheme.background.copy(alpha = CameraWash),
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         // Top padding here; the lists take the bottom one, so they scroll behind the bottom bar.
         Column(Modifier.consumeWindowInsets(padding).padding(top = padding.calculateTopPadding()).fillMaxSize()) {
             val listPadding = PaddingValues(
@@ -231,6 +336,12 @@ fun ActiveWorkoutPage(
             ) { counting ->
                 when {
                     counting -> CountdownScreen(viewModel, onExerciseClick, listPadding)
+                    viewModel.loaded && viewModel.items.isEmpty() -> EmptyState(
+                        icon = painterResource(R.drawable.ic_fitness),
+                        message = stringResource(R.string.workout_empty_message),
+                        actionLabel = stringResource(R.string.routine_add_exercises),
+                        onAction = { adding = true },
+                    )
                     !viewModel.loaded || exercise == null -> Column(
                         Modifier.padding(Dimens.PageGutter),
                         verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
@@ -259,16 +370,89 @@ fun ActiveWorkoutPage(
                                             modifier = Modifier.weight(1f),
                                         )
                                         SubjectNotes(NoteSubject.EXERCISE, exercise.exerciseId, tonal = true)
+                                        // The rep counter's toggle, lit while it counts (Settings › Rep counter).
+                                        if (canCount || countingReps) {
+                                            FilledTonalIconToggleButton(checked = countingReps, onCheckedChange = { on -> if (on) countingReps = true else stopCounting() }) {
+                                                Icon(
+                                                    painterResource(R.drawable.ic_metronome),
+                                                    stringResource(if (countingReps) R.string.rep_counter_stop else R.string.rep_counter_start),
+                                                )
+                                            }
+                                        }
+                                        if (canEditExercises) {
+                                            FilledTonalIconButton(onClick = { managing = true }) {
+                                                Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.workout_exercises))
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            item(key = "media") { ExerciseMedia(details, exercise.key) }
-                            item(key = "sets") { SetList(viewModel, exercise, details?.isBodyweight == true, editable = editableRows) }
+                            item(key = "media") {
+                                val set = viewModel.currentSet
+                                if (countingReps && set != null) {
+                                    RepCounter(
+                                        exerciseId = exercise.exerciseId,
+                                        settings = settings,
+                                        count = counted,
+                                        // The top of a range; none for a set to failure (it counts until stopped).
+                                        target = set.target.repsMax ?: set.target.reps,
+                                        onCount = { counted = it },
+                                        onTarget = { stopCounting() },
+                                    )
+                                } else if (cameraOn) {
+                                    CameraMedia(details, exercise.key, cameraReps, set?.let { it.target.repsMax ?: it.target.reps })
+                                } else {
+                                    ExerciseMedia(details, exercise.key)
+                                }
+                            }
+                            item(key = "sets") { SetList(viewModel, exercise, details?.isBodyweight == true, editable = editableRows || viewModel.isEmptyWorkout) }
                         }
                     }
                 }
             }
         }
+        // Paused by the camera: the screen dimmed, and in red what to do.
+        if (cameraPaused && viewModel.paused) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = OutOfViewDim)), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.camera_get_in_position),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+      }
+    }
+
+    if (managing) {
+        WorkoutExercisesDialog(
+            viewModel = viewModel,
+            onDismiss = { managing = false },
+            onAdd = { adding = true },
+            onSwap = { swapping = it },
+        )
+    }
+    if (adding) {
+        ExercisePicker(
+            exercises = viewModel.browsable,
+            onAdd = { ids ->
+                viewModel.addExercises(ids)
+                adding = false
+            },
+            onDismiss = { adding = false },
+        )
+    }
+    swapping?.let { key ->
+        ExercisePicker(
+            exercises = viewModel.browsable,
+            title = stringResource(R.string.workout_swap_exercise),
+            single = true,
+            onAdd = { ids ->
+                ids.firstOrNull()?.let { viewModel.swapExercise(key, it) }
+                swapping = null
+            },
+            onDismiss = { swapping = null },
+        )
     }
 
     if (confirmingExit) {
@@ -329,8 +513,8 @@ private fun WorkoutClock(viewModel: ActiveWorkoutViewModel, style: TextStyle = M
 }
 
 /**
- * How far along the workout is: one segment per exercise, filled by its sets logged. The current
- * exercise's segment is in the primary colour, the others in the tertiary.
+ * How far along the workout is: one segment per exercise, filled by its sets logged, all in the
+ * primary colour; the current exercise's segment is the thicker one.
  */
 @Composable
 private fun WorkoutProgress(viewModel: ActiveWorkoutViewModel, modifier: Modifier = Modifier) {
@@ -346,7 +530,7 @@ private fun WorkoutProgress(viewModel: ActiveWorkoutViewModel, modifier: Modifie
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier.weight(1f).height(if (current) 8.dp else 4.dp).align(Alignment.CenterVertically),
-                color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                color = MaterialTheme.colorScheme.primary,
                 drawStopIndicator = {},
             )
         }
@@ -525,11 +709,64 @@ private fun ControlIconButton(
 }
 
 /**
+ * The demo's place while the camera counts: the count in the middle, over the camera, and the
+ * exercise's demo small in the top-right corner, still moving. Tapping the picture grows it back to the full
+ * demo, where it was; tapping that shrinks it again.
+ */
+@Composable
+private fun CameraMedia(exercise: Exercise?, exerciseKey: Int, count: Int, target: Int?) {
+    var expanded by rememberSaveable(exerciseKey) { mutableStateOf(false) }
+    val motion = MaterialTheme.motionScheme
+    AnimatedContent(
+        targetState = expanded,
+        transitionSpec = { fadeIn(motion.defaultEffectsSpec()) togetherWith fadeOut(motion.defaultEffectsSpec()) },
+        label = "camera media",
+    ) { big ->
+        if (big) {
+            ExerciseMedia(exercise, exerciseKey, onTap = { expanded = false })
+        } else {
+            Box(Modifier.widthIn(max = MediaMaxWidth).fillMaxWidth().aspectRatio(1f)) {
+                Text(
+                    if (target != null) stringResource(R.string.rep_counter_of, count, target) else count.toString(),
+                    style = MaterialTheme.typography.displayLarge,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+                // Small, but still moving: the animation plays, the photos keep taking turns.
+                if (exercise != null) {
+                    LibraryDemo(
+                        exercise,
+                        MaterialTheme.shapes.large,
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .fillMaxWidth(CameraThumbnailFraction)
+                            .aspectRatio(1f)
+                            .clip(MaterialTheme.shapes.large)
+                            .clickable { expanded = true },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** How long the camera may not see you before the workout pauses, in milliseconds. */
+private const val OUT_OF_VIEW_MS = 2_000L
+
+/** How dark the screen goes while the camera waits for you. */
+private const val OutOfViewDim = 0.6f
+
+/** How much of the demo's width its picture takes in the corner while the camera counts. */
+private const val CameraThumbnailFraction = 0.3f
+
+/** How strongly the page's colour washes over the camera, so text on it stays readable. */
+private const val CameraWash = 0.55f
+
+/**
  * The exercise's animated demo, large. ⓘ (a toggle) swaps it for how to do it, step by step; the
  * button then shows an image icon to swap back. Opens on the demo for each new exercise.
  */
 @Composable
-private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int) {
+private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int, onTap: (() -> Unit)? = null) {
     var howTo by rememberSaveable(exerciseKey) { mutableStateOf(false) }
     val motion = MaterialTheme.motionScheme
     Box(
@@ -538,7 +775,8 @@ private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int) {
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .then(onTap?.let { Modifier.clickable(onClick = it) } ?: Modifier),
     ) {
         AnimatedContent(
             targetState = howTo,
@@ -563,7 +801,8 @@ private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int) {
                 else -> ExerciseDemo(exercise, MaterialTheme.shapes.extraLarge, Modifier.fillMaxSize())
             }
         }
-        FilledTonalIconToggleButton(
+        // A plain icon button: no container over the picture.
+        IconToggleButton(
             checked = howTo,
             onCheckedChange = { howTo = it },
             modifier = Modifier.align(Alignment.TopEnd).padding(Dimens.SpaceS),
@@ -710,6 +949,8 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
     val numbers = exercise.sets.map { it.target }.setNumbers()
     // Read-only, a column no set has a value in is left out (as in the routine preview).
     val columns = if (editable) PreviewColumns() else previewColumns(exercise.sets.map { it.actual }, exercise.timed)
+    // A distance exercise's columns: read-only, those with values, and the pace once a set has a distance and a time.
+    val distanceColumns = if (editable) DistanceColumns() else distanceColumns(exercise.sets.map { it.actual })
     var sheetFor by remember { mutableStateOf<Int?>(null) }
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth()) {
@@ -719,9 +960,16 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
             horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS),
         ) {
             ColumnLabel(stringResource(R.string.routine_col_set), Modifier.width(SetColumnWidth))
-            if (columns.reps) ColumnLabel(stringResource(if (exercise.timed) R.string.routine_col_time else R.string.routine_col_reps), Modifier.weight(1f))
-            if (columns.weight) ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
-            if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
+            if (exercise.distance) {
+                if (distanceColumns.distance) ColumnLabel(stringResource(R.string.routine_col_distance), Modifier.weight(1f))
+                if (distanceColumns.time) ColumnLabel(stringResource(R.string.routine_col_time), Modifier.weight(1f))
+                if (distanceColumns.pace) ColumnLabel(stringResource(R.string.routine_col_pace), Modifier.weight(1f))
+                if (!distanceColumns.distance && !distanceColumns.time) Spacer(Modifier.weight(1f))
+            } else {
+                if (columns.reps) ColumnLabel(stringResource(if (exercise.timed) R.string.routine_col_time else R.string.routine_col_reps), Modifier.weight(1f))
+                if (columns.weight) ColumnLabel(stringResource(R.string.routine_col_weight), Modifier.weight(1f))
+                if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
+            }
         }
         exercise.sets.forEachIndexed { i, set ->
             val current = i == viewModel.setIndex
@@ -756,7 +1004,16 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
                         SetBadge(set.target.type, numbers[i], onClick = { sheetFor = set.key })
                         val cell = Modifier.weight(1f)
                         val seconds = hold?.let { ceil(it.remainingMs / 1000.0).toInt() } ?: set.actual.durationSeconds
-                        if (editable) {
+                        if (exercise.distance) {
+                            // How far, and how long it took (and, read-only, the pace).
+                            if (editable) {
+                                DistanceField(set.actual.distanceMeters, { viewModel.setDistance(exercise.key, set.key, it) }, cell)
+                                TimeField(seconds, { viewModel.setDuration(exercise.key, set.key, it) }, Modifier.weight(1f))
+                            } else {
+                                DistanceCells(set.actual.distanceMeters, seconds, distanceColumns)
+                                if (!distanceColumns.distance && !distanceColumns.time) Spacer(Modifier.weight(1f))
+                            }
+                        } else if (editable) {
                             if (exercise.timed) {
                                 TimeField(seconds, { viewModel.setDuration(exercise.key, set.key, it) }, cell)
                             } else {
@@ -765,21 +1022,31 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
                             WeightField(set.actual.weightKg, bodyweight, { viewModel.setWeight(exercise.key, set.key, it) }, Modifier.weight(1f))
                         } else {
                             // Values only, as in the routine preview (blank when empty).
-                            if (columns.reps) {
-                                PreviewCell(if (exercise.timed) seconds?.let(::formatSeconds).orEmpty() else set.actual.reps?.toString().orEmpty(), cell)
+                            val low = set.target.reps
+                            val high = set.target.repsMax
+                            when {
+                                !columns.reps -> Unit
+                                // Not done yet, from a rep range: the range planned, "10 - 12"; once
+                                // logged, what was done.
+                                exercise.repRange && !exercise.timed && set.status == SetStatus.PENDING && low != null && high != null ->
+                                    RangePreview(low, high, cell)
+                                else -> PreviewCell(if (exercise.timed) seconds?.let(::formatSeconds).orEmpty() else set.actual.reps?.toString().orEmpty(), cell)
                             }
                             if (columns.weight) PreviewCell(weightText(set.actual.weightKg, bodyweight), Modifier.weight(1f))
                             if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
                         }
                     }
-                    when (set.status) {
-                        SetStatus.DONE -> Icon(
+                    when {
+                        // Logged with no reps (or no time): a shrug instead of the check.
+                        set.status == SetStatus.DONE && set.actual.isEmptyLog(exercise.timed, exercise.distance) ->
+                            Shrug(LoggedIconSize, stringResource(R.string.workout_state_nothing))
+                        set.status == SetStatus.DONE -> Icon(
                             Icons.Filled.Check,
                             stringResource(R.string.workout_state_done),
                             tint = colors.primary,
                             modifier = Modifier.size(LoggedIconSize),
                         )
-                        SetStatus.FAILED -> Icon(
+                        set.status == SetStatus.FAILED -> Icon(
                             Icons.Filled.Close,
                             stringResource(R.string.workout_state_failed),
                             tint = colors.error,
@@ -797,6 +1064,7 @@ private fun SetList(viewModel: ActiveWorkoutViewModel, exercise: PlayerExercise,
             set = set,
             number = numbers[exercise.sets.indexOf(set)],
             timed = exercise.timed,
+            distance = exercise.distance,
             canRemove = exercise.sets.size > 1,
             viewModel = viewModel,
             exerciseKey = exercise.key,
@@ -821,12 +1089,15 @@ private fun LogSetSheet(
     set: PlayerSet,
     number: Int?,
     timed: Boolean,
+    distance: Boolean,
     canRemove: Boolean,
     viewModel: ActiveWorkoutViewModel,
     exerciseKey: Int,
     onDismiss: () -> Unit,
 ) {
     var typingReps by rememberSaveable { mutableStateOf(false) }
+    var typingDistance by rememberSaveable { mutableStateOf(false) }
+    var choosingTime by rememberSaveable { mutableStateOf(false) }
     var failing by rememberSaveable { mutableStateOf(false) }
     var choosingWeight by rememberSaveable { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -849,9 +1120,15 @@ private fun LogSetSheet(
                     viewModel.markDone(exerciseKey, set.key)
                     onDismiss()
                 })
-                if (!timed) add(LogAction(R.string.workout_log_reps, R.string.workout_log_reps_hint) { typingReps = true })
-                if (!timed) add(LogAction(R.string.workout_log_failed, R.string.workout_log_failed_hint) { failing = true })
-                add(LogAction(R.string.workout_log_weight, R.string.workout_log_weight_hint) { choosingWeight = true })
+                if (distance) {
+                    // How far and how long; a distance set has no reps or weight.
+                    add(LogAction(R.string.workout_log_distance, R.string.workout_log_distance_hint) { typingDistance = true })
+                    add(LogAction(R.string.workout_log_time, R.string.workout_log_time_hint) { choosingTime = true })
+                } else {
+                    if (!timed) add(LogAction(R.string.workout_log_reps, R.string.workout_log_reps_hint) { typingReps = true })
+                    if (!timed) add(LogAction(R.string.workout_log_failed, R.string.workout_log_failed_hint) { failing = true })
+                    add(LogAction(R.string.workout_log_weight, R.string.workout_log_weight_hint) { choosingWeight = true })
+                }
                 add(LogAction(R.string.workout_log_skip, R.string.workout_log_skip_hint) {
                     viewModel.skip(exerciseKey, set.key)
                     onDismiss()
@@ -888,6 +1165,29 @@ private fun LogSetSheet(
                 }
             }
         }
+    }
+    if (typingDistance) {
+        DistanceDialog(
+            initialMeters = set.actual.distanceMeters,
+            title = stringResource(R.string.workout_distance_done_title),
+            onLog = { meters ->
+                viewModel.logDistance(exerciseKey, set.key, meters)
+                typingDistance = false
+                onDismiss()
+            },
+            onDismiss = { typingDistance = false },
+        )
+    }
+    if (choosingTime) {
+        SetTimeSheet(
+            current = set.actual.durationSeconds,
+            onPick = { seconds ->
+                viewModel.logTime(exerciseKey, set.key, seconds)
+                choosingTime = false
+                onDismiss()
+            },
+            onDismiss = { choosingTime = false },
+        )
     }
     if (typingReps) {
         RepsDoneDialog(
@@ -968,19 +1268,29 @@ private fun KeepScreenOn() {
 }
 
 /**
- * A buzz when the rest is over or a timed set has been held long enough, while the app is on
- * screen (off screen, the notification buzzes instead).
+ * A buzz and/or the notification sound when the rest is over or a timed set has been held long
+ * enough, while the app is on screen (off screen, the notification alerts instead). The sound
+ * plays as a notification, so silent and vibrate modes mute it.
  */
 @Composable
-private fun VibrateOnAlerts(viewModel: ActiveWorkoutViewModel, enabled: Boolean) {
+private fun AlertOnCountdownEnd(viewModel: ActiveWorkoutViewModel, buzz: Boolean, sound: Boolean) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val buzzing by rememberUpdatedState(enabled)
+    val buzzing by rememberUpdatedState(buzz)
+    val sounding by rememberUpdatedState(sound)
     LaunchedEffect(viewModel) {
         val vibrator = context.getSystemService(VibratorManager::class.java)?.defaultVibrator
         viewModel.alerts.collect {
-            if (buzzing && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@collect
+            if (buzzing) vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 300, 150, 300), -1))
+            if (sounding) {
+                RingtoneManager.getRingtone(context, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))?.apply {
+                    audioAttributes = AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    play()
+                }
             }
         }
     }

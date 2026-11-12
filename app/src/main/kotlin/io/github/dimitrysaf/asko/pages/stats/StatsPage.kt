@@ -1,6 +1,5 @@
 package io.github.dimitrysaf.asko.pages.stats
 
-import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,7 +22,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.dimitrysaf.asko.R
-import io.github.dimitrysaf.asko.components.EmptyState
 import io.github.dimitrysaf.asko.components.ExerciseListSkeleton
 import io.github.dimitrysaf.asko.components.ExerciseThumbnail
 import io.github.dimitrysaf.asko.components.PageScaffold
@@ -38,14 +36,17 @@ import io.github.dimitrysaf.asko.pages.workout.RecordList
 
 /**
  * Stats, from the Routines tab: an area chart of sets, reps and time (each toggled on or off) and
- * one of the weight lifted, each over a range you pick; the latest personal records; and every
+ * one of the weight lifted, each over a range you pick; a year in review with its heat map; the
+ * latest personal records; and every
  * exercise you've done, most sets first. Tap an exercise for its own stats.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit) {
-    val viewModel = appViewModel { StatsViewModel(it.workoutRepository, it.exerciseRepository) }
+    val viewModel = appViewModel { StatsViewModel(it.workoutRepository, it.exerciseRepository, it.bodyWeightRepository, it.noteRepository) }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val bodyWeights by viewModel.bodyWeights.collectAsStateWithLifecycle()
+    val painNotes by viewModel.painNotes.collectAsStateWithLifecycle()
 
     PageScaffold(title = stringResource(R.string.stats_page_title), onBack = onBack) { padding ->
         val stats = state
@@ -54,11 +55,7 @@ fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit)
                 SkeletonBox(Modifier.fillMaxWidth().height(320.dp), MaterialTheme.shapes.extraLarge)
                 ExerciseListSkeleton(count = 4)
             }
-            stats.history.isEmpty() -> EmptyState(
-                painterResource(R.drawable.ic_stats),
-                stringResource(R.string.stats_empty),
-                Modifier.padding(padding),
-            )
+            // With no workouts yet, each card says so itself, centred in it.
             else -> LazyColumn(
                 modifier = Modifier.consumeWindowInsets(padding),
                 contentPadding = pageContentPadding(padding),
@@ -66,6 +63,12 @@ fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit)
             ) {
                 item(key = "training") { TrainingChart(stats.history) }
                 item(key = "weight") { WeightChart(stats.history) }
+                item(key = "muscles") { MusclesCard(stats.history, viewModel.library) }
+                item(key = "body-weight") { BodyWeightCard(bodyWeights.orEmpty(), viewModel::logBodyWeight) }
+                if (painNotes.isNotEmpty()) {
+                    item(key = "pain") { PainCard(painNotes) }
+                }
+                item(key = "review") { YearReviewCard(stats.history, viewModel.library) }
                 if (stats.latestRecords.isNotEmpty()) {
                     item(key = "records-title") { SectionTitle(stringResource(R.string.stats_latest_records)) }
                     item(key = "records") {
@@ -76,13 +79,15 @@ fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit)
                         )
                     }
                 }
-                item(key = "most-used-title") { SectionTitle(stringResource(R.string.stats_most_used)) }
-                // One block, so rows sit at the segmented gap rather than the page's spacing.
-                item(key = "most-used") {
-                    Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                        stats.mostUsed.forEachIndexed { index, row ->
-                            MostUsedItem(row, viewModel.library[row.exerciseId], index, stats.mostUsed.size) {
-                                onExerciseClick(row.exerciseId)
+                if (stats.mostUsed.isNotEmpty()) {
+                    item(key = "most-used-title") { SectionTitle(stringResource(R.string.stats_most_used)) }
+                    // One block, so rows sit at the segmented gap rather than the page's spacing.
+                    item(key = "most-used") {
+                        Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                            stats.mostUsed.forEachIndexed { index, row ->
+                                MostUsedItem(row, viewModel.library[row.exerciseId], index, stats.mostUsed.size) {
+                                    onExerciseClick(row.exerciseId)
+                                }
                             }
                         }
                     }

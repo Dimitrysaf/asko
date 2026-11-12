@@ -28,6 +28,7 @@ import io.github.dimitrysaf.asko.R
 fun PageScaffold(
     title: String,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
@@ -41,6 +42,7 @@ fun PageScaffold(
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text(title) },
+                subtitle = subtitle?.let { { Text(it) } },
                 navigationIcon = {
                     if (onBack != null) {
                         IconButton(onClick = onBack) {

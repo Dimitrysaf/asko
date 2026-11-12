@@ -17,6 +17,12 @@ enum class RecordKind {
 
     /** The longest time a timed set was held, in seconds. */
     LONGEST_HOLD,
+
+    /** The longest distance in one set, in metres. */
+    LONGEST_DISTANCE,
+
+    /** The fastest distance set: its speed, in metres a second (shown as the time per km or mile). */
+    FASTEST_PACE,
 }
 
 /** A record set in a workout: [value] beat the best before it, [previous]. */
@@ -39,7 +45,14 @@ fun PlannedSet.valueFor(kind: RecordKind): Double? = when (kind) {
         val r = reps
         if (kg == null || kg <= 0 || r == null || r <= 0 || r > MAX_REPS_FOR_ONE_REP_MAX) null else kg * (1 + r / 30.0)
     }
-    RecordKind.LONGEST_HOLD -> durationSeconds?.takeIf { it > 0 }?.toDouble()
+    // A distance set's time is how long the distance took, not a hold.
+    RecordKind.LONGEST_HOLD -> durationSeconds?.takeIf { it > 0 && distanceMeters == null }?.toDouble()
+    RecordKind.LONGEST_DISTANCE -> distanceMeters?.takeIf { it > 0 }
+    RecordKind.FASTEST_PACE -> {
+        val m = distanceMeters
+        val s = durationSeconds
+        if (m == null || s == null || m <= 0 || s <= 0) null else m / s
+    }
 }
 
 private const val MAX_REPS_FOR_ONE_REP_MAX = 12
@@ -80,4 +93,45 @@ fun recordsIn(workout: Workout, history: List<Workout>): List<PersonalRecord> {
             if (value > previous) PersonalRecord(id, kind, value, previous) else null
         }
     }
+}
+
+/** A record beaten: [kind] went from [previous] to [value] in the workout started [at]. */
+data class RecordEvent(val kind: RecordKind, val value: Double, val previous: Double, val at: Instant)
+
+/**
+ * Every record [exerciseId] has set, newest first: each time one of its bests was beaten (the
+ * first time it was done only sets the bar, like [recordsIn]).
+ */
+fun List<Workout>.recordHistory(exerciseId: String): List<RecordEvent> {
+    val bests = mutableMapOf<RecordKind, Double>()
+    val events = mutableListOf<RecordEvent>()
+    sortedBy { it.startedAt }.forEach { w ->
+        val now = listOf(w).setsOf(exerciseId).bests()
+        now.forEach { (kind, value) ->
+            val before = bests[kind]
+            if (before != null && value > before) events += RecordEvent(kind, value, before, w.startedAt)
+            if (before == null || value > before) bests[kind] = value
+        }
+    }
+    return events.reversed()
+}
+
+/** The heaviest set of [reps] reps, and when. */
+data class RepMax(val reps: Int, val weightKg: Double, val at: Instant)
+
+/**
+ * For each rep count from 1 to 12 that [exerciseId] has been done for with a weight, the heaviest
+ * such set (the first time it was lifted, if it was matched later).
+ */
+fun List<Workout>.repMaxes(exerciseId: String): List<RepMax> {
+    val best = sortedMapOf<Int, RepMax>()
+    sortedBy { it.startedAt }.forEach { w ->
+        w.exercises.filter { it.exerciseId == exerciseId }.flatMap { it.sets }.forEach { set ->
+            val reps = set.reps ?: return@forEach
+            val kg = set.weightKg ?: return@forEach
+            if (reps !in 1..MAX_REPS_FOR_ONE_REP_MAX || kg <= 0) return@forEach
+            if (kg > (best[reps]?.weightKg ?: 0.0)) best[reps] = RepMax(reps, kg, w.startedAt)
+        }
+    }
+    return best.values.toList()
 }

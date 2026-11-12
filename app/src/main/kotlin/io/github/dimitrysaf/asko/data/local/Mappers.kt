@@ -27,6 +27,7 @@ fun WorkoutWithExercises.toModel() = Workout(
             timed = exercise.timed,
             repRange = exercise.repRange,
             supersetWithNext = exercise.supersetWithNext,
+            distance = exercise.distance,
             sets = sets.sortedBy { it.position }.map {
                 PlannedSet(
                     type = setType(it.type),
@@ -34,6 +35,7 @@ fun WorkoutWithExercises.toModel() = Workout(
                     repsMax = it.repsMax,
                     weightKg = it.weightKg,
                     durationSeconds = it.durationSeconds,
+                    distanceMeters = it.distanceMeters,
                 )
             },
         )
@@ -50,6 +52,7 @@ fun List<RoutineExercise>.toWorkoutEntities(): List<Pair<WorkoutExerciseEntity, 
         timed = exercise.timed,
         repRange = exercise.repRange,
         supersetWithNext = exercise.supersetWithNext,
+        distance = exercise.distance,
     ) to exercise.sets.map {
         WorkoutSetEntity(
             workoutExerciseId = 0,
@@ -59,6 +62,7 @@ fun List<RoutineExercise>.toWorkoutEntities(): List<Pair<WorkoutExerciseEntity, 
             repsMax = it.repsMax,
             weightKg = it.weightKg,
             durationSeconds = it.durationSeconds,
+            distanceMeters = it.distanceMeters,
         )
     }
 }
@@ -69,6 +73,7 @@ private fun setType(name: String) = SetType.entries.firstOrNull { it.name == nam
 fun RoutineWithExercises.toModel() = Routine(
     id = routine.id,
     name = routine.name,
+    folder = routine.folder,
     exercises = exercises.sortedBy { it.exercise.position }.map { (exercise, sets) ->
         RoutineExercise(
             exerciseId = exercise.exerciseId,
@@ -76,6 +81,7 @@ fun RoutineWithExercises.toModel() = Routine(
             timed = exercise.timed,
             repRange = exercise.repRange,
             supersetWithNext = exercise.supersetWithNext,
+            distance = exercise.distance,
             sets = sets.sortedBy { it.position }.map {
                 PlannedSet(
                     type = setType(it.type),
@@ -83,6 +89,7 @@ fun RoutineWithExercises.toModel() = Routine(
                     repsMax = it.repsMax,
                     weightKg = it.weightKg,
                     durationSeconds = it.durationSeconds,
+                    distanceMeters = it.distanceMeters,
                 )
             },
         )
@@ -91,7 +98,7 @@ fun RoutineWithExercises.toModel() = Routine(
 
 /** Entities for saving; ids and positions are filled in by [io.github.dimitrysaf.asko.data.local.dao.RoutineDao.save]. */
 fun Routine.toEntities(): Pair<RoutineEntity, List<Pair<RoutineExerciseEntity, List<RoutineSetEntity>>>> =
-    RoutineEntity(id = id, name = name.trim()) to exercises.map { exercise ->
+    RoutineEntity(id = id, name = name.trim(), folder = folder?.trim()?.ifEmpty { null }) to exercises.map { exercise ->
         RoutineExerciseEntity(
             routineId = id,
             exerciseId = exercise.exerciseId,
@@ -100,6 +107,7 @@ fun Routine.toEntities(): Pair<RoutineEntity, List<Pair<RoutineExerciseEntity, L
             timed = exercise.timed,
             repRange = exercise.repRange,
             supersetWithNext = exercise.supersetWithNext,
+            distance = exercise.distance,
         ) to exercise.sets.map {
             RoutineSetEntity(
                 routineExerciseId = 0,
@@ -109,6 +117,7 @@ fun Routine.toEntities(): Pair<RoutineEntity, List<Pair<RoutineExerciseEntity, L
                 repsMax = it.repsMax,
                 weightKg = it.weightKg,
                 durationSeconds = it.durationSeconds,
+                distanceMeters = it.distanceMeters,
             )
         }
     }

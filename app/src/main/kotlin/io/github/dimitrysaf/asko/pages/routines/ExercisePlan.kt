@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.R
+import io.github.dimitrysaf.asko.lib.format.weightValue
 import io.github.dimitrysaf.asko.components.ExerciseThumbnail
 import io.github.dimitrysaf.asko.components.segmentedShapes
 import io.github.dimitrysaf.asko.constants.Dimens
@@ -120,11 +121,12 @@ internal val GroupSpacing = Dimens.SpaceL
 
 /**
  * A routine's (or a done workout's) exercises, read-only, in their segmented groups: supersets
- * under their title. Tapping an exercise's title row opens its page.
+ * under their title. Tapping an exercise's title row opens its page; without [onExerciseClick]
+ * (a share image) nothing is tappable and the notes buttons are left out.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ExercisePlanList(rows: List<Pair<Exercise, RoutineExercise>>, onExerciseClick: (exerciseId: String) -> Unit) {
+fun ExercisePlanList(rows: List<Pair<Exercise, RoutineExercise>>, onExerciseClick: ((exerciseId: String) -> Unit)?) {
     val segments = rows.segments { it.second.supersetWithNext }
     Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
         rows.forEachIndexed { i, (exercise, planned) ->
@@ -138,7 +140,7 @@ fun ExercisePlanList(rows: List<Pair<Exercise, RoutineExercise>>, onExerciseClic
                     count = segment.count,
                     showRest = !segment.restHidden,
                     color = segment.supersetNumber?.let { supersetColor(it) } ?: MaterialTheme.colorScheme.surfaceContainer,
-                    onClick = { onExerciseClick(exercise.id) },
+                    onClick = onExerciseClick?.let { open -> { open(exercise.id) } },
                 )
             }
         }
@@ -158,12 +160,12 @@ fun ExercisePlanBlock(
     count: Int,
     showRest: Boolean = true,
     color: Color = MaterialTheme.colorScheme.surfaceContainer,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
 ) {
     Surface(shape = segmentedShapes(index, count).shape, color = color) {
         Column {
             Row(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(Dimens.SpaceM),
+                modifier = Modifier.fillMaxWidth().then(onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier).padding(Dimens.SpaceM),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
             ) {
@@ -175,16 +177,23 @@ fun ExercisePlanBlock(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                SubjectNotes(NoteSubject.EXERCISE, exercise.id, tonal = true)
+                // Not in a picture of it (a share image): nothing there to tap.
+                if (onClick != null) SubjectNotes(NoteSubject.EXERCISE, exercise.id, tonal = true)
             }
             Column(Modifier.padding(start = Dimens.SpaceM, end = Dimens.SpaceM, bottom = Dimens.SpaceM)) {
                 if (showRest) RestPreview(planned.restSeconds)
                 Column(Modifier.padding(top = if (showRest) Dimens.SpaceS else 0.dp)) {
-                    val columns = previewColumns(planned.sets, planned.timed)
-                    SetTableTitles(planned.timed, planned.repRange, columns)
                     val numbers = planned.sets.setNumbers()
-                    planned.sets.forEachIndexed { i, set ->
-                        SetPreviewRow(set, numbers[i], planned.timed, planned.repRange, exercise.isBodyweight, columns)
+                    if (planned.distance) {
+                        val columns = distanceColumns(planned.sets)
+                        DistanceTitles(columns)
+                        planned.sets.forEachIndexed { i, set -> DistancePreviewRow(set, numbers[i], columns) }
+                    } else {
+                        val columns = previewColumns(planned.sets, planned.timed)
+                        SetTableTitles(planned.timed, planned.repRange, columns)
+                        planned.sets.forEachIndexed { i, set ->
+                            SetPreviewRow(set, numbers[i], planned.timed, planned.repRange, exercise.isBodyweight, columns)
+                        }
                     }
                 }
             }
@@ -289,17 +298,26 @@ internal fun SetPreviewRow(
             when {
                 set.type == SetType.FAILURE -> PreviewCell(stringResource(R.string.set_failure_target), cell, muted = true)
                 timed -> PreviewCell(set.durationSeconds?.let(::formatSeconds).orEmpty(), cell)
-                // Both ends: "8 - 12"; only one: just that number.
-                repRange && set.reps != null && set.repsMax != null -> Row(cell, verticalAlignment = Alignment.CenterVertically) {
-                    PreviewCell(set.reps.toString(), Modifier.weight(1f))
-                    RangeDash()
-                    PreviewCell(set.repsMax.toString(), Modifier.weight(1f))
-                }
+                // Both ends: "8 - 12", kept together in the middle of the column however wide it
+                // is; only one: just that number.
+                repRange && set.reps != null && set.repsMax != null -> RangePreview(set.reps, set.repsMax, cell)
                 else -> PreviewCell((set.reps ?: set.repsMax)?.toString().orEmpty(), cell)
             }
         }
         if (columns.weight) PreviewCell(weightText(set.weightKg, bodyweight), Modifier.weight(1f))
         if (!columns.reps && !columns.weight) Spacer(Modifier.weight(1f))
+    }
+}
+
+/** A rep range read-only, "8 - 12": its ends and the dash side by side, centred in the cell. */
+@Composable
+internal fun RangePreview(low: Int, high: Int, modifier: Modifier = Modifier) {
+    Box(modifier.height(CellHeight), contentAlignment = Alignment.Center) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(low.toString(), style = MaterialTheme.typography.titleMedium)
+            RangeDash()
+            Text(high.toString(), style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 
@@ -327,5 +345,5 @@ internal fun PreviewCell(text: String, modifier: Modifier = Modifier, muted: Boo
 internal fun weightText(weightKg: Double?, bodyweight: Boolean): String = when (weightKg) {
     null -> ""
     0.0 -> stringResource(R.string.weight_bw)
-    else -> stringResource(if (bodyweight) R.string.routine_added_kg_value else R.string.routine_kg_value, formatKg(weightKg))
+    else -> weightValue(weightKg, added = bodyweight)
 }

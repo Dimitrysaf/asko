@@ -16,6 +16,9 @@ import kotlinx.serialization.Serializable
 
 // Every screen is a NavKey; @Serializable lets the back stack survive process death.
 
+/** The tabs as one page under the pages opened over them (the app shell's own; never on the back stack). */
+@Serializable data object TabsRoute : NavKey
+
 @Serializable data object RoutinesRoute : NavKey
 
 @Serializable data object DiscoveryRoute : NavKey
@@ -24,6 +27,9 @@ import kotlinx.serialization.Serializable
 @Serializable data class HistoryRoute(val day: String? = null) : NavKey
 
 @Serializable data class ExerciseDetailRoute(val exerciseId: String) : NavKey
+
+/** Making ([exerciseId] empty, called [name]) or changing an exercise of yours. */
+@Serializable data class CustomExerciseEditorRoute(val exerciseId: String = "", val name: String = "") : NavKey
 
 /** Doing the routine [routineId], set by set. */
 @Serializable data class ActiveWorkoutRoute(val routineId: Long) : NavKey

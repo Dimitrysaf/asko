@@ -22,7 +22,9 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.io.IOException
+import java.time.Duration
 import java.time.LocalDate
+import io.github.dimitrysaf.asko.data.stats.averageDurations
 
 /** A routine with its exercises looked up in the library, for display. */
 data class RoutineSummary(val routine: Routine, val exercises: List<Exercise>)
@@ -54,6 +56,20 @@ class RoutinesViewModel(
         workouts.history
             .map(::days)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), workouts.historyState.value?.let(::days))
+
+    /** How long each routine's workouts took on average, by routine name; empty until read. */
+    val averageDurations: StateFlow<Map<String, Duration>> =
+        workouts.history
+            .map { it.averageDurations() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), workouts.historyState.value?.averageDurations().orEmpty())
+
+    /** Throws away the workout in progress, then [then] (starting another routine). */
+    fun discardActiveWorkout(then: () -> Unit) {
+        viewModelScope.launch {
+            activeWorkouts.clear()
+            then()
+        }
+    }
 
     private fun days(history: List<Workout>) = history.map { it.startedAt.localDate() }.toSet()
 

@@ -105,6 +105,7 @@ data class SavedExercise(
     val repRange: Boolean,
     val sets: List<SavedSet>,
     val supersetWithNext: Boolean = false,
+    val distance: Boolean = false,
 )
 
 @Serializable
@@ -117,4 +118,5 @@ data class SavedValues(
     val repsMax: Int? = null,
     val weightKg: Double? = null,
     val durationSeconds: Int? = null,
+    val distanceMeters: Double? = null,
 )

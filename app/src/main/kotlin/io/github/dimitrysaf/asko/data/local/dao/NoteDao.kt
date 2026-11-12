@@ -40,6 +40,14 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE subject = :subject ORDER BY createdAtMs, id")
     suspend fun allOf(subject: String): List<NoteEntity>
 
+    /** Every note on one kind of subject (all workouts' notes, say), oldest first. */
+    @Query("SELECT * FROM notes WHERE subject = :subject ORDER BY createdAtMs, id")
+    fun observeAllOf(subject: String): Flow<List<NoteEntity>>
+
+    /** Every note of a type, on any subject, oldest first. */
+    @Query("SELECT * FROM notes WHERE type = :type ORDER BY createdAtMs, id")
+    fun observeOfType(type: String): Flow<List<NoteEntity>>
+
     /** Trainers' names written before, for suggestions. */
     @Query("SELECT DISTINCT trainer FROM notes WHERE trainer IS NOT NULL AND trainer != '' ORDER BY trainer COLLATE NOCASE")
     fun trainers(): Flow<List<String>>

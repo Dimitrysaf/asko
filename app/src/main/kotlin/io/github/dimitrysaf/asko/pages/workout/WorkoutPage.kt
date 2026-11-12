@@ -11,6 +11,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.runtime.remember
+import io.github.dimitrysaf.asko.lib.share.ShareImage
+import io.github.dimitrysaf.asko.components.MoreItem
+import io.github.dimitrysaf.asko.components.MoreMenu
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.icons.Icons
 import io.github.dimitrysaf.asko.components.pageSkeletonPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -46,7 +52,7 @@ import java.util.Date
 /**
  * A workout from History, shown like a routine's page: when it was, then each exercise with its
  * rest and its sets as done (badge, reps or time, weight), read-only. Tap an exercise for its page;
- * Edit and Delete in the top bar.
+ * Edit in the top bar; Share (a picture of it) and Delete in its ⋮ menu.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -55,6 +61,8 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
     val workout by viewModel.workout.collectAsStateWithLifecycle()
     val done = workout
     var confirmingDelete by rememberSaveable { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
+    val records by viewModel.records.collectAsStateWithLifecycle()
 
     PageScaffold(
         title = done?.let { it.routineName ?: stringResource(R.string.history_workout) }.orEmpty(),
@@ -62,7 +70,10 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
         actions = {
             if (done != null) {
                 IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
-                IconButton(onClick = { confirmingDelete = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.action_delete)) }
+                MoreMenu { close ->
+                    MoreItem(stringResource(R.string.action_share), rememberVectorPainter(Icons.Filled.Share), close) { if (!sharing) sharing = true }
+                    MoreItem(stringResource(R.string.action_delete), rememberVectorPainter(Icons.Filled.Delete), close, destructive = true) { confirmingDelete = true }
+                }
             }
         },
     ) { padding ->
@@ -90,6 +101,14 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
                     ExercisePlanList(rows, onExerciseClick)
                 }
             }
+        }
+    }
+
+    // Share: a picture of the workout, drawn out of sight, to the share sheet.
+    if (sharing && done != null) {
+        val rows = done.exercises.mapNotNull { planned -> viewModel.library[planned.exerciseId]?.let { it to planned } }
+        ShareImage(name = done.routineName ?: stringResource(R.string.history_workout), onDone = { sharing = false }) {
+            WorkoutShareImage(done, rows, records, viewModel.library)
         }
     }
 
