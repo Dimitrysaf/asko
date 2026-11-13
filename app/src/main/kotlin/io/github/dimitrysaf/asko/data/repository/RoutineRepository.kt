@@ -42,10 +42,25 @@ class RoutineRepository(private val dao: RoutineDao, private val notes: NoteRepo
         return copyId
     }
 
-    /** Deletes the routine and its notes. */
-    suspend fun delete(id: Long) {
+    /**
+     * Deletes the routine and its notes. Returns what puts it all back as it was (same id, place in
+     * the list and folder, its notes), for Undo.
+     */
+    suspend fun delete(id: Long): suspend () -> Unit {
+        val routine = dao.observe(id).first()?.toModel()
+        val position = dao.positionOf(id)
+        val folder = dao.folderOf(id)
+        val saved = notes.notesNow(NoteSubject.ROUTINE, id.toString())
         dao.delete(id)
         notes.deleteFor(NoteSubject.ROUTINE, id.toString())
+        return {
+            if (routine != null) {
+                save(routine)
+                position?.let { dao.setPosition(id, it) }
+                dao.setFolder(id, folder)
+                notes.replace(NoteSubject.ROUTINE, id.toString(), saved)
+            }
+        }
     }
 
     /** Moves routine [id] into [folder] (blank or null: out of any folder). */

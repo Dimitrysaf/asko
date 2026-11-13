@@ -11,7 +11,14 @@
     <string name="action_back">Back</string>
     <string name="action_log">Log</string>
     <string name="action_share">Share</string>
+    <string name="action_undo">Undo</string>
+    <string name="workout_deleted">Workout deleted</string>
+    <string name="routine_deleted">Routine deleted</string>
+    <string name="exercise_deleted">Exercise deleted</string>
+    <string name="note_deleted">Note deleted</string>
     <string name="action_duplicate">Duplicate</string>
+    <string name="settings_distance_unit">Distance unit</string>
+    <string name="settings_distance_unit_hint">Distances and pace, for cardio</string>
     <string name="settings_rep_counter">Rep counter</string>
     <string name="settings_rep_counter_hint">Counts your reps during a set</string>
     <string name="settings_say_reps">Say reps aloud</string>
@@ -31,7 +38,7 @@
     <string name="rep_counter_of">%1$d / %2$d</string>
     <string name="rep_counter_start">Count reps</string>
     <string name="rep_counter_stop">Stop counting</string>
-    <string name="rep_counter_camera_desc">The front camera watches you and counts each full movement. Nothing leaves your phone.</string>
+    <string name="rep_counter_camera_desc">The front camera watches you and counts each full movement. The picture never leaves your phone.</string>
     <string name="pane_empty">What you open shows here</string>
     <string name="settings_health_section">Health Connect</string>
     <string name="settings_health">Send to Health Connect</string>
@@ -141,6 +148,7 @@
     <string name="weight_no_target">No target</string>
     <string name="weight_bodyweight">Body weight</string>
     <string name="weight_custom">Custom…</string>
+    <string name="weight_custom_value">Custom: %s</string>
     <string name="weight_custom_title">Custom weight</string>
     <string name="weight_bw">BW</string>
     <string name="weight_set">Set</string>
@@ -164,8 +172,6 @@
     <string name="set_badge_drop">D</string>
     <string name="set_badge_failure">F</string>
     <string name="set_badge_finisher">Fn</string>
-    <string name="routine_delete_title">Delete this routine?</string>
-    <string name="routine_delete_message">"%s" will be removed. Workouts you already logged stay in History.</string>
     <string name="action_save">Save</string>
     <string name="action_create">Create</string>
     <string name="action_discard">Discard</string>
@@ -277,18 +283,29 @@
     <string name="stats_series_time">Time</string>
     <string name="stats_weight_lifted">Weight lifted</string>
     <string name="stats_heaviest">Heaviest</string>
-    <string name="stats_no_weight">No weights logged in this time</string>
-    <string name="stats_none_shown">Turn on sets, reps or time to see them</string>
-    <string name="stats_nothing_done">Nothing done in this time</string>
     <string name="stats_most_used">Most used exercises</string>
     <string name="stats_open_exercise">About this exercise</string>
     <string name="stats_all_time">All time</string>
     <string name="stats_done">Done</string>
     <string name="stats_last_done">Last done</string>
+    <string name="stats_range_week">1W</string>
     <string name="stats_range_month">1M</string>
     <string name="stats_range_quarter">3M</string>
     <string name="stats_range_year">1Y</string>
     <string name="stats_range_all">All</string>
+    <string name="stats_period_week">Last 7 days</string>
+    <string name="stats_period_month">Last 30 days</string>
+    <string name="stats_period_quarter">Last 3 months</string>
+    <string name="stats_period_year">Last 12 months</string>
+    <string name="stats_period_all">All time</string>
+    <string name="chart_no_data">No data</string>
+    <string name="stats_tile_exercises">Exercises</string>
+    <string name="stats_by_day">By day</string>
+    <string name="stats_by_week">By week</string>
+    <string name="stats_by_month">By month</string>
+    <string name="chart_worst">Worst</string>
+    <string name="chart_latest">Latest</string>
+    <string name="chart_per_workout">Average per workout</string>
     <string name="record_line">%1$s: %2$s, was %3$s</string>
     <string name="record_heaviest">Heaviest</string>
     <string name="record_most_reps">Most reps</string>
@@ -335,10 +352,7 @@
     <string name="settings_restored">Restored %1$s</string>
     <string name="settings_backup_failed">That didn\'t work. Is it an Asko backup file?</string>
     <string name="settings_counts">%1$s and %2$s</string>
-    <string name="settings_about">About</string>
-    <string name="settings_version">Version</string>
-    <string name="workout_delete_title">Delete workout?</string>
-    <string name="workout_delete_message">It will be removed from your history. This can\'t be undone.</string>
+    <string name="settings_version_line">Version %s</string>
     <string name="workout_edit_discard_message">Your changes to this workout won\'t be saved.</string>
     <string name="history_started">Started %1$s</string>
     <string name="history_took">Took %1$s</string>
@@ -405,8 +419,6 @@
     <string name="note_pain_short">%d/10</string>
     <string name="note_edited">Edited %s</string>
     <string name="note_delete">Delete note</string>
-    <string name="note_delete_title">Delete this note?</string>
-    <string name="note_delete_message">It will be gone for good.</string>
     <!-- Streaks -->
     <plurals name="streak_days">
         <item quantity="one">%d day streak</item>
@@ -431,6 +443,11 @@
         <item quantity="other">%d weeks in a row. Keep going!</item>
     </plurals>
     <string name="streak_fell_ill">Fell ill</string>
+    <string name="streak_about_workout">Each day you work out adds a day</string>
+    <string name="streak_about_rest">Your rest days count too</string>
+    <string name="streak_about_pause">Sick and travel days pause it</string>
+    <string name="streak_about_end">Any other missed day ends it</string>
+    <string name="day_reason_title">Why did you miss %s?</string>
     <plurals name="streak_sick_days">
         <item quantity="one">I was sick that day</item>
         <item quantity="other">I was sick for the past %d days</item>
@@ -463,7 +480,6 @@
     <string name="routine_metric_volume">Volume</string>
     <string name="routine_metric_reps">Reps</string>
     <string name="routine_metric_duration">Duration</string>
-    <string name="routine_chart_hint">Each point is the average per workout</string>
     <string name="stats_rep_maxes">Heaviest by reps</string>
     <string name="stats_record_history">Record history</string>
     <string name="stats_record_when">%1$s · was %2$s</string>
@@ -510,10 +526,8 @@
     <string name="custom_create">Create exercise</string>
     <string name="custom_main_muscles">Main muscles</string>
     <string name="custom_other_muscles">Also works</string>
-    <string name="custom_delete_title">Delete %1$s?</string>
-    <string name="custom_delete_message">It leaves Discovery and the exercise picker. Routines and workouts that have it keep showing it.</string>
     <string name="custom_discard_message">Your changes to this exercise won\'t be saved.</string>
-    <string name="media_add">Add a photo or video</string>
+    <string name="media_add">Add photos or videos</string>
     <string name="media_remove_photo">Remove this photo?</string>
     <string name="media_remove_video">Remove this video?</string>
     <string name="media_remove_message">Your copy in Asko is deleted. The original on your phone stays.</string>
@@ -538,8 +552,6 @@
     <string name="stats_body_weight">Body weight</string>
     <string name="body_weight_log">Log your weight</string>
     <string name="body_weight_today">Today\'s weight</string>
-    <string name="body_weight_empty">No weight logged yet</string>
-    <string name="pain_none">No pain noted in this time</string>
     <string name="stats_pain">Pain</string>
     <string name="pain_body_part">Body part</string>
     <string name="pain_any">Anywhere</string>

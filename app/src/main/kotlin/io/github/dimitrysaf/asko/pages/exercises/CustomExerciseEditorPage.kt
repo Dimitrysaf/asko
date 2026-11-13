@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.exercises
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import io.github.dimitrysaf.asko.pages.routines.EditableTitle
 import io.github.dimitrysaf.asko.pages.routines.RoutineNameDialog
 import io.github.dimitrysaf.asko.data.model.ExerciseMedia
@@ -40,7 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,12 +83,12 @@ fun CustomExerciseEditorPage(
     var removingMedia by remember { mutableStateOf<ExerciseMedia?>(null) }
     val discard = { if (viewModel.dirty) confirmingDiscard = true else onBack() }
     // The system's photo picker: a photo, GIF or video of it, shown first wherever it is.
-    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let(viewModel::addMedia) }
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris -> uris.forEach(viewModel::addMedia) }
     BackHandler(onBack = discard)
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 navigationIcon = {
                     Button(
                         onClick = discard,
@@ -117,7 +118,7 @@ fun CustomExerciseEditorPage(
             verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
         ) {
             // How it will look: your photos and videos first, then wger's muscles for the ones you
-            // pick. Add a photo or video in its top-left corner; Remove one of yours in its top-right.
+            // pick, then a page to add more; Remove one of yours in its top-right corner.
             item(key = "picture") {
                 Box(Modifier.fillMaxWidth().height(280.dp)) {
                     ExerciseDemo(
@@ -125,11 +126,9 @@ fun CustomExerciseEditorPage(
                         shape = MaterialTheme.shapes.extraLarge,
                         modifier = Modifier.fillMaxSize(),
                         onRemoveMedia = { removingMedia = it },
+                        // The last page adds photos and videos, as many as you pick.
+                        onAddMedia = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                     )
-                    FilledTonalIconButton(
-                        onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
-                        modifier = Modifier.align(Alignment.TopStart).padding(Dimens.SpaceS),
-                    ) { Icon(painterResource(R.drawable.ic_image), stringResource(R.string.media_add)) }
                 }
             }
             // What it works and needs, as one segmented list; each opens a sheet to tick them in.
@@ -262,6 +261,7 @@ private fun Set<Muscle>.labels(): List<String> = Muscle.entries.filter { it in t
 @Composable
 private fun ChoiceRow(index: Int, title: String, chosen: List<String>, onClick: () -> Unit, preview: @Composable () -> Unit) {
     SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
         onClick = onClick,
         shapes = segmentedShapes(index, 3),
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),

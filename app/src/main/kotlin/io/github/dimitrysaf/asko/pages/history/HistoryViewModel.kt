@@ -18,16 +18,23 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import io.github.dimitrysaf.asko.data.model.DayExcuse
+import java.time.LocalDate
 import java.io.IOException
 
 class HistoryViewModel(
     workouts: WorkoutRepository,
     exercises: ExerciseRepository,
-    streaks: StreakRepository,
+    private val streaks: StreakRepository,
     notes: NoteRepository,
 ) : ViewModel() {
     /** The streak and each day's mark for the calendar; null while loading. */
     val streak: StateFlow<Streak?> = streaks.streak
+
+    /** Why [day] was missed, picked by holding it in the calendar (null: just missed). */
+    fun setExcuse(day: LocalDate, excuse: DayExcuse?) {
+        viewModelScope.launch { streaks.setExcuse(day, excuse) }
+    }
 
     /** Finished workouts, newest first; null while loading. */
     val history: StateFlow<List<Workout>?> = workouts.historyState

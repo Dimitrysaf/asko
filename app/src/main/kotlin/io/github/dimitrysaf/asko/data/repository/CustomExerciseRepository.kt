@@ -33,6 +33,9 @@ class CustomExerciseRepository(private val dao: CustomExerciseDao, scope: Corout
     /** Deletes it from the library; routines and workouts that have it keep showing it. */
     suspend fun retire(id: String) = dao.retire(id)
 
+    /** Brings back an exercise deleted (retired) by mistake, for Undo. */
+    suspend fun unretire(id: String) = dao.unretire(id)
+
     /** Every one, as stored (for backups). */
     suspend fun allNow(): List<CustomExerciseEntity> = dao.all()
 

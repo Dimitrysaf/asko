@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.components.LocalAppSnackbar
+import io.github.dimitrysaf.asko.components.WithTooltip
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
 import androidx.compose.material.icons.automirrored.filled.List
@@ -67,7 +69,9 @@ fun RoutinePage(
 ) {
     val viewModel = appViewModel { RoutineViewModel(routineId, it.routineRepository, it.exerciseRepository, it.activeWorkoutStore, it.workoutRepository) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
+    val snackbar = LocalAppSnackbar.current
+    val deletedMessage = stringResource(R.string.routine_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
     var duplicating by rememberSaveable { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     var choosingFolder by rememberSaveable { mutableStateOf(false) }
@@ -87,12 +91,20 @@ fun RoutinePage(
         actions = {
             if (loaded != null) {
                 SubjectNotes(NoteSubject.ROUTINE, routineId.toString())
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
+                WithTooltip(stringResource(R.string.action_edit)) {
+                    IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
+                }
                 MoreMenu { close ->
                     MoreItem(stringResource(R.string.action_duplicate), painterResource(R.drawable.ic_copy), close) { duplicating = true }
                     MoreItem(stringResource(R.string.folder_move), painterResource(R.drawable.ic_folder), close) { choosingFolder = true }
                     MoreItem(stringResource(R.string.action_share), rememberVectorPainter(Icons.Filled.Share), close) { if (!sharing) sharing = true }
-                    MoreItem(stringResource(R.string.action_delete), rememberVectorPainter(Icons.Filled.Delete), close, destructive = true) { confirmingDelete = true }
+                    MoreItem(stringResource(R.string.action_delete), rememberVectorPainter(Icons.Filled.Delete), close, destructive = true) {
+                        // Deleted at once; the snackbar on the page underneath offers Undo.
+                        viewModel.delete { undo ->
+                            onBack()
+                            snackbar.showUndo(deletedMessage, undoLabel, undo)
+                        }
+                    }
                 }
             }
         },
@@ -189,22 +201,6 @@ fun RoutinePage(
                 viewModel.duplicate(name, onOpenRoutine)
             },
             onDismiss = { duplicating = false },
-        )
-    }
-    if (confirmingDelete && loaded != null) {
-        AlertDialog(
-            onDismissRequest = { confirmingDelete = false },
-            title = { Text(stringResource(R.string.routine_delete_title)) },
-            text = { Text(stringResource(R.string.routine_delete_message, loaded.routine.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmingDelete = false
-                    viewModel.delete(onBack)
-                }) { Text(stringResource(R.string.action_delete)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmingDelete = false }) { Text(stringResource(R.string.action_cancel)) }
-            },
         )
     }
 }

@@ -1,5 +1,13 @@
 package io.github.dimitrysaf.asko.components
 
+import androidx.compose.ui.unit.dp
+
+import androidx.compose.foundation.shape.CircleShape
+
+import androidx.compose.foundation.layout.height
+
+import androidx.compose.foundation.layout.Arrangement
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,6 +63,8 @@ fun RoutineListItem(
     inProgress: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
+    // The library not read yet: the routine has exercises, none of them known.
+    val namesLoading = exercises.isEmpty() && routine.exercises.isNotEmpty()
     Surface(
         onClick = onClick,
         shape = animatedSegmentedShape(index, count, rounded = selected),
@@ -70,7 +80,9 @@ fun RoutineListItem(
                 ),
                 leadingContent = {
                     val first = exercises.firstOrNull()
-                    if (first != null) {
+                    if (first == null && namesLoading) {
+                        SkeletonBox(Modifier.size(Dimens.ExerciseThumbnailSize), MaterialTheme.shapes.small)
+                    } else if (first != null) {
                         ExerciseThumbnail(first, Modifier.size(Dimens.ExerciseThumbnailSize))
                     } else {
                         Box(
@@ -96,8 +108,17 @@ fun RoutineListItem(
                         }
                     }
                 },
+                // Always two lines, so a card doesn't change height when the names arrive; until
+                // then, two lines of skeleton.
                 supportingContent = {
-                    Text(exercises.joinToString { it.name }, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (namesLoading) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs), modifier = Modifier.padding(top = Dimens.SpaceXs)) {
+                            SkeletonLine(0.9f)
+                            SkeletonLine(0.6f)
+                        }
+                    } else {
+                        Text(exercises.joinToString { it.name }, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 },
             )
             PillButton(
@@ -106,6 +127,38 @@ fun RoutineListItem(
                 onClick = onStart,
                 modifier = Modifier.fillMaxWidth().padding(start = Dimens.SpaceM, end = Dimens.SpaceM, bottom = Dimens.SpaceM),
             )
+        }
+    }
+}
+
+/**
+ * Routine cards while the routines are read: the same shape and size as [RoutineListItem]
+ * (picture, name, two lines, the Start button) as skeletons, in a segmented list of [count].
+ */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun RoutineListSkeleton(count: Int = 3, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+        repeat(count) { index ->
+            Surface(shape = segmentedShapes(index, count).shape, color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column {
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = { SkeletonBox(Modifier.size(Dimens.ExerciseThumbnailSize), MaterialTheme.shapes.small) },
+                        headlineContent = { Text(" ", modifier = Modifier.fillMaxWidth(0.5f).skeleton(MaterialTheme.shapes.extraSmall)) },
+                        supportingContent = {
+                            Column(verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs), modifier = Modifier.padding(top = Dimens.SpaceXs)) {
+                                SkeletonLine(0.9f)
+                                SkeletonLine(0.6f)
+                            }
+                        },
+                    )
+                    SkeletonBox(
+                        Modifier.fillMaxWidth().padding(start = Dimens.SpaceM, end = Dimens.SpaceM, bottom = Dimens.SpaceM).height(56.dp),
+                        CircleShape,
+                    )
+                }
+            }
         }
     }
 }

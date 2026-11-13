@@ -19,15 +19,14 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import io.github.dimitrysaf.asko.R
-import io.github.dimitrysaf.asko.components.AreaChart
-import io.github.dimitrysaf.asko.components.ChartSeries
+import io.github.dimitrysaf.asko.components.MetricChart
+import io.github.dimitrysaf.asko.theme.Metric
+import io.github.dimitrysaf.asko.theme.metricColor
 import io.github.dimitrysaf.asko.components.ChoiceSheet
-import io.github.dimitrysaf.asko.components.EmptyState
 import io.github.dimitrysaf.asko.components.IconCircle
 import io.github.dimitrysaf.asko.components.MusclePreview
 import io.github.dimitrysaf.asko.components.SheetFilterChip
 import io.github.dimitrysaf.asko.components.segmentedShapes
-import io.github.dimitrysaf.asko.components.timelineLabels
 import io.github.dimitrysaf.asko.data.model.Muscle
 import io.github.dimitrysaf.asko.data.model.Note
 import io.github.dimitrysaf.asko.data.stats.StatsRange
@@ -79,15 +78,15 @@ fun PainCard(notes: List<Note>) {
             }
             line to worst.toList()
         }
-        val color = MaterialTheme.colorScheme.error
-        if (levels.all { it <= 0 }) {
-            EmptyState(painterResource(R.drawable.ic_notes), stringResource(R.string.pain_none), compact = true)
-        } else {
-            AreaChart(
-                series = listOf(ChartSeries("pain", levels, color) { resources.getString(R.string.note_pain_short, it.roundToInt()) }),
-                labels = timelineLabels(line),
-            )
-        }
+        val format: (Double) -> String = { resources.getString(R.string.note_pain_short, it.roundToInt()) }
+        MetricChart(
+            values = levels,
+            timeline = line,
+            color = metricColor(Metric.PAIN),
+            format = format,
+            headline = levels.maxOrNull()?.takeIf { it > 0 }?.let(format),
+            headlineLabel = listOf(stringResource(R.string.chart_worst), periodLabel(range)).joinToString(" · "),
+        )
         // The latest notes, newest first.
         val latest = shown.asReversed().take(LATEST)
         Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {

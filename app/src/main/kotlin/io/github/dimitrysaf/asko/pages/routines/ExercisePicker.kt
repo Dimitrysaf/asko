@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -69,7 +70,9 @@ fun ExercisePicker(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS),
                 ) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.action_close)) }
+                    WithTooltip(stringResource(R.string.action_close)) {
+                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.action_close)) }
+                    }
                     Text(
                         title,
                         style = MaterialTheme.typography.titleLarge,

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import io.github.dimitrysaf.asko.data.local.dao.WorkoutDao
 import io.github.dimitrysaf.asko.data.local.entity.WorkoutEntity
+import kotlinx.coroutines.flow.first
 import io.github.dimitrysaf.asko.data.local.toModel
 import io.github.dimitrysaf.asko.data.local.toWorkoutEntities
 import io.github.dimitrysaf.asko.data.model.NoteSubject
@@ -38,10 +39,30 @@ class WorkoutRepository(private val dao: WorkoutDao, private val notes: NoteRepo
     suspend fun update(id: Long, startedAt: Instant, endedAt: Instant, exercises: List<RoutineExercise>) =
         dao.replace(id, startedAt.toEpochMilli(), endedAt.toEpochMilli(), exercises.toWorkoutEntities())
 
-    /** Deletes the workout and its notes. */
-    suspend fun delete(id: Long) {
+    /**
+     * Deletes the workout and its notes. Returns what puts it all back as it was (same id, times,
+     * routine name, exercises and notes), for Undo.
+     */
+    suspend fun delete(id: Long): suspend () -> Unit {
+        val workout = dao.observe(id).first()?.toModel()
+        val saved = notes.notesNow(NoteSubject.WORKOUT, id.toString())
         dao.delete(id)
         notes.deleteFor(NoteSubject.WORKOUT, id.toString())
+        return {
+            if (workout != null) {
+                dao.insertLogged(
+                    WorkoutEntity(
+                        id = workout.id,
+                        startedAt = workout.startedAt.toEpochMilli(),
+                        endedAt = workout.endedAt?.toEpochMilli(),
+                        note = workout.note,
+                        routineName = workout.routineName,
+                    ),
+                    workout.exercises.toWorkoutEntities(),
+                )
+                notes.replace(NoteSubject.WORKOUT, id.toString(), saved)
+            }
+        }
     }
 
     /** One workout; null once it no longer exists. */

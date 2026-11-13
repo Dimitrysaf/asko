@@ -237,6 +237,14 @@ class ActiveWorkoutViewModel(
         }
 
     /** Pause / Resume; for a timed set still waiting, it starts its clock. */
+    /**
+     * Pauses or resumes, and nothing else (unlike [togglePause], which starts a timed set's clock
+     * that's waiting): for the camera counter, while it can't see you.
+     */
+    fun holdPaused(on: Boolean) {
+        paused = on
+    }
+
     fun togglePause() {
         if (!paused && holdWaiting) {
             startHoldIfTimed()
@@ -251,12 +259,13 @@ class ActiveWorkoutViewModel(
      * from a set already done to another already done (going forward again after going back)
      * just moves: no rest.
      */
-    fun next() {
+    fun next(justLogged: Boolean = false) {
         val exercise = currentExercise ?: return
         val set = currentSet ?: return
         val running = countdown
-        // Already logged before this Next (you went back to it with Previous).
-        val wasLogged = set.status != SetStatus.PENDING
+        // Already logged before this Next (you went back to it with Previous); [justLogged]: logged
+        // a moment ago (the camera counter moving on), so the rest still comes.
+        val wasLogged = !justLogged && set.status != SetStatus.PENDING
         if (set.status == SetStatus.PENDING) {
             val held = if (running?.kind == CountdownKind.SET) ((running.totalMs - running.remainingMs) / 1000).toInt() else null
             updateSet(exercise.key, set.key) {

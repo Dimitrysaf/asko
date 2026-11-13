@@ -36,11 +36,10 @@ class WorkoutViewModel(
     var library by mutableStateOf<Map<String, Exercise>>(emptyMap())
         private set
 
-    /** Deletes the workout, then [then]. */
-    fun delete(then: () -> Unit) {
+    /** Deletes the workout, then [then] with what puts it back (for Undo). */
+    fun delete(then: (undo: suspend () -> Unit) -> Unit) {
         viewModelScope.launch {
-            workouts.delete(workoutId)
-            then()
+            then(workouts.delete(workoutId))
         }
     }
 

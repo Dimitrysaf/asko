@@ -37,7 +37,7 @@ class WorkoutImporter(
     /** Throws [IOException] when the file is neither app's export. */
     suspend fun import(input: InputStream): ImportCounts {
         val text = input.bufferedReader().readText()
-        val parsed = parseImport(text, settings.weightUnit.value) ?: throw IOException("Not a Strong or Hevy export")
+        val parsed = parseImport(text, settings.weightUnit.value, settings.distanceUnit.value) ?: throw IOException("Not a Strong or Hevy export")
         val library = try {
             exercises.lookup()
         } catch (e: IOException) {

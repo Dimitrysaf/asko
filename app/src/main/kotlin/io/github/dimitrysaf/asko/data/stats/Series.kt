@@ -60,7 +60,8 @@ enum class RoutineMetric { VOLUME, REPS, DURATION }
 /**
  * Workouts done from the routine [routineName] (as named when done) over [range] up to [today]:
  * per bucket, the average of [metric] per workout (volume: kilos lifted, reps × weight; reps;
- * duration in minutes, from workouts with a known length), 0 where none was done.
+ * duration in minutes, from workouts with a known length), 0 where none was done; and the
+ * average per workout over the whole range (null if none).
  */
 fun List<Workout>.routineSeries(
     routineName: String,
@@ -68,7 +69,7 @@ fun List<Workout>.routineSeries(
     range: StatsRange,
     today: LocalDate,
     firstDayOfWeek: DayOfWeek,
-): Pair<Timeline, List<Double?>> {
+): Triple<Timeline, List<Double?>, Double?> {
     val done = filter { it.routineName == routineName }
     val timeline = timeline(range, today, done.minOfOrNull { it.startedAt }?.localDate(), firstDayOfWeek)
     val values = List(timeline.starts.size) { mutableListOf<Double>() }
@@ -82,6 +83,6 @@ fun List<Workout>.routineSeries(
         }
         values[i] += value
     }
-    // 0 where none was done, like the other charts (a line needs two points to show at all).
-    return timeline to values.map { if (it.isEmpty()) 0.0 else it.average() }
+    val all = values.flatten()
+    return Triple(timeline, values.map { if (it.isEmpty()) 0.0 else it.average() }, all.takeIf { it.isNotEmpty() }?.average())
 }

@@ -1,5 +1,13 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.runtime.mutableIntStateOf
+import io.github.dimitrysaf.asko.components.WithTooltip
+import io.github.dimitrysaf.asko.data.model.mainMuscles
+
+import io.github.dimitrysaf.asko.lib.reps.jointFor
+
 import kotlinx.coroutines.delay
 
 import androidx.compose.material3.TopAppBarDefaults
@@ -113,7 +121,7 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -196,6 +204,14 @@ fun ActiveWorkoutPage(
     val viewModel = appViewModel {
         ActiveWorkoutViewModel(routineId, it.routineRepository, it.workoutRepository, it.exerciseRepository, it.activeWorkoutStore, it.workoutSession, it.settings, emptyName)
     }
+    // A firm tap each time a set is logged, however it was (button, camera, timer).
+    val haptics = LocalHapticFeedback.current
+    val logged = viewModel.doneSets
+    var lastLogged by remember { mutableIntStateOf(logged) }
+    LaunchedEffect(logged) {
+        if (logged > lastLogged) haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        lastLogged = logged
+    }
     var confirmingExit by rememberSaveable { mutableStateOf(false) }
     var confirmingFinish by rememberSaveable { mutableStateOf(false) }
     val finish = { if (viewModel.allDone) viewModel.finish { id -> onFinished(id, viewModel.routineName) } else confirmingFinish = true }
@@ -228,33 +244,51 @@ fun ActiveWorkoutPage(
     }
     val askCamera = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraAllowed = it }
     LaunchedEffect(repCounter) { if (repCounter == RepCounterMode.CAMERA && !cameraAllowed) askCamera.launch(Manifest.permission.CAMERA) }
-    val cameraOn = repCounter == RepCounterMode.CAMERA && cameraAllowed && onRepsSet
+    // The camera stays on the whole time Now Exercising is open; it counts only on a reps set.
+    val cameraOn = repCounter == RepCounterMode.CAMERA && cameraAllowed && viewModel.loaded
+    val cameraCounting = cameraOn && onRepsSet
+    // Where Get in position applies: a set still to do (reps or timed, whose clock it stops too);
+    // not during a rest, on a distance exercise (you're off running) or once all is done.
+    val cameraWatching = cameraOn && !resting && countingSet?.status == SetStatus.PENDING &&
+        viewModel.currentExercise?.distance == false
     var cameraReps by remember(viewModel.exerciseIndex, viewModel.setIndex) { mutableIntStateOf(0) }
     // Out of the camera's view for a moment: the workout pauses (Settings › Pause when you're out
     // of view) and resumes when it sees you again, if it was the camera that paused it.
     val pauseOutOfView by settings.pauseOutOfView.collectAsStateWithLifecycle()
     var inView by remember { mutableStateOf(false) }
     var cameraPaused by remember { mutableStateOf(false) }
-    LaunchedEffect(cameraOn, inView, pauseOutOfView) {
-        val watching = cameraOn && pauseOutOfView
+    LaunchedEffect(cameraWatching, inView, pauseOutOfView) {
+        val watching = cameraWatching && pauseOutOfView
         if (!watching || inView) {
-            if (cameraPaused && viewModel.paused) viewModel.togglePause()
+            if (cameraPaused && viewModel.paused) viewModel.holdPaused(false)
             cameraPaused = false
             return@LaunchedEffect
         }
         delay(OUT_OF_VIEW_MS)
         if (!viewModel.paused) {
-            viewModel.togglePause()
+            viewModel.holdPaused(true)
             cameraPaused = true
         }
     }
-    /** A rep the camera saw: it's the set's reps so far; at the target, the set is logged. */
+    /**
+     * A rep the camera saw: it's the set's reps so far. At the target the set is done and the
+     * workout moves on, as Next does (the rest starts).
+     */
     fun cameraRep(reps: Int) {
         cameraReps = reps
         val exercise = viewModel.currentExercise ?: return
         val set = viewModel.currentSet ?: return
         val target = set.target.repsMax ?: set.target.reps
-        if (target != null && reps >= target) viewModel.logReps(exercise.key, set.key, reps) else viewModel.setReps(exercise.key, set.key, reps)
+        viewModel.setReps(exercise.key, set.key, reps)
+        if (target != null && reps >= target) viewModel.next()
+    }
+    // Camera mode: a set marked done (✓) moves on by itself, rest and all.
+    val setStatus = viewModel.currentSet?.status
+    var lastStatus by remember(viewModel.exerciseIndex, viewModel.setIndex) { mutableStateOf(setStatus) }
+    LaunchedEffect(setStatus) {
+        val wasPending = lastStatus == SetStatus.PENDING
+        lastStatus = setStatus
+        if (cameraOn && wasPending && (setStatus == SetStatus.DONE || setStatus == SetStatus.FAILED)) viewModel.next(justLogged = true)
     }
     /** Stops the counter; what it counted is logged as the set's reps. */
     fun stopCounting() {
@@ -279,7 +313,7 @@ fun ActiveWorkoutPage(
         topBar = {
             // Exit on the left, Pause / Resume on the right; it stays during the rest. Over the
             // camera, see-through.
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 colors = if (cameraOn) TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) else TopAppBarDefaults.topAppBarColors(),
                 navigationIcon = {
                     ControlIconButton(
@@ -309,6 +343,9 @@ fun ActiveWorkoutPage(
         if (cameraOn) {
             CameraReps(
                 setKey = viewModel.exerciseIndex to viewModel.setIndex,
+                // The joint to count, from the exercise's main muscles (knees for squats…).
+                joint = viewModel.currentExercise?.let { viewModel.library[it.exerciseId] }?.let { jointFor(it.mainMuscles) },
+                counting = cameraCounting,
                 onRep = ::cameraRep,
                 onInView = { inView = it },
                 wash = MaterialTheme.colorScheme.background.copy(alpha = CameraWash),
@@ -372,16 +409,20 @@ fun ActiveWorkoutPage(
                                         SubjectNotes(NoteSubject.EXERCISE, exercise.exerciseId, tonal = true)
                                         // The rep counter's toggle, lit while it counts (Settings › Rep counter).
                                         if (canCount || countingReps) {
-                                            FilledTonalIconToggleButton(checked = countingReps, onCheckedChange = { on -> if (on) countingReps = true else stopCounting() }) {
-                                                Icon(
-                                                    painterResource(R.drawable.ic_metronome),
-                                                    stringResource(if (countingReps) R.string.rep_counter_stop else R.string.rep_counter_start),
-                                                )
+                                            WithTooltip(stringResource(if (countingReps) R.string.rep_counter_stop else R.string.rep_counter_start)) {
+                                                FilledTonalIconToggleButton(checked = countingReps, onCheckedChange = { on -> if (on) countingReps = true else stopCounting() }) {
+                                                    Icon(
+                                                        painterResource(R.drawable.ic_metronome),
+                                                        stringResource(if (countingReps) R.string.rep_counter_stop else R.string.rep_counter_start),
+                                                    )
+                                                }
                                             }
                                         }
                                         if (canEditExercises) {
-                                            FilledTonalIconButton(onClick = { managing = true }) {
-                                                Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.workout_exercises))
+                                            WithTooltip(stringResource(R.string.workout_exercises)) {
+                                                FilledTonalIconButton(onClick = { managing = true }) {
+                                                    Icon(Icons.AutoMirrored.Filled.List, stringResource(R.string.workout_exercises))
+                                                }
                                             }
                                         }
                                     }
@@ -400,7 +441,17 @@ fun ActiveWorkoutPage(
                                         onTarget = { stopCounting() },
                                     )
                                 } else if (cameraOn) {
-                                    CameraMedia(details, exercise.key, cameraReps, set?.let { it.target.repsMax ?: it.target.reps })
+                                    CameraMedia(
+                                        details,
+                                        exercise.key,
+                                        // In the middle: the reps counted on a reps set; on a timed one, its clock.
+                                        when {
+                                            cameraCounting -> set?.let { s -> (s.target.repsMax ?: s.target.reps)?.let { stringResource(R.string.rep_counter_of, cameraReps, it) } ?: cameraReps.toString() }
+                                            exercise.timed && set?.status == SetStatus.PENDING ->
+                                                (viewModel.countdown?.takeIf { it.kind == CountdownKind.SET }?.let { ceil(it.remainingMs / 1000.0).toInt() } ?: set.actual.durationSeconds)?.let(::formatSeconds)
+                                            else -> null
+                                        },
+                                    )
                                 } else {
                                     ExerciseMedia(details, exercise.key)
                                 }
@@ -700,21 +751,24 @@ private fun ControlIconButton(
     modifier: Modifier = Modifier,
     large: Boolean = true,
 ) {
-    FilledIconButton(
-        onClick = onClick,
-        shapes = IconButtonDefaults.shapes(),
-        modifier = if (large) modifier.size(IconButtonDefaults.mediumContainerSize()) else modifier,
-        colors = IconButtonDefaults.filledIconButtonColors(containerColor = container, contentColor = content),
-    ) { Icon(icon, contentDescription = description) }
+    WithTooltip(description) {
+        FilledIconButton(
+            onClick = onClick,
+            shapes = IconButtonDefaults.shapes(),
+            modifier = if (large) modifier.size(IconButtonDefaults.mediumContainerSize()) else modifier,
+            colors = IconButtonDefaults.filledIconButtonColors(containerColor = container, contentColor = content),
+        ) { Icon(icon, contentDescription = description) }
+    }
 }
 
 /**
- * The demo's place while the camera counts: the count in the middle, over the camera, and the
+ * The demo's place while the camera is on: [centre] in the middle (the reps counted, or a timed
+ * set's clock), over the camera, and the
  * exercise's demo small in the top-right corner, still moving. Tapping the picture grows it back to the full
  * demo, where it was; tapping that shrinks it again.
  */
 @Composable
-private fun CameraMedia(exercise: Exercise?, exerciseKey: Int, count: Int, target: Int?) {
+private fun CameraMedia(exercise: Exercise?, exerciseKey: Int, centre: String?) {
     var expanded by rememberSaveable(exerciseKey) { mutableStateOf(false) }
     val motion = MaterialTheme.motionScheme
     AnimatedContent(
@@ -726,11 +780,9 @@ private fun CameraMedia(exercise: Exercise?, exerciseKey: Int, count: Int, targe
             ExerciseMedia(exercise, exerciseKey, onTap = { expanded = false })
         } else {
             Box(Modifier.widthIn(max = MediaMaxWidth).fillMaxWidth().aspectRatio(1f)) {
-                Text(
-                    if (target != null) stringResource(R.string.rep_counter_of, count, target) else count.toString(),
-                    style = MaterialTheme.typography.displayLarge,
-                    modifier = Modifier.align(Alignment.Center),
-                )
+                if (centre != null) {
+                    Text(centre, style = MaterialTheme.typography.displayLarge, modifier = Modifier.align(Alignment.Center))
+                }
                 // Small, but still moving: the animation plays, the photos keep taking turns.
                 if (exercise != null) {
                     LibraryDemo(
@@ -802,15 +854,17 @@ private fun ExerciseMedia(exercise: Exercise?, exerciseKey: Int, onTap: (() -> U
             }
         }
         // A plain icon button: no container over the picture.
-        IconToggleButton(
-            checked = howTo,
-            onCheckedChange = { howTo = it },
-            modifier = Modifier.align(Alignment.TopEnd).padding(Dimens.SpaceS),
-        ) {
-            if (howTo) {
-                Icon(painterResource(R.drawable.ic_image), stringResource(R.string.workout_show_demo))
-            } else {
-                Icon(Icons.Filled.Info, stringResource(R.string.workout_show_how_to))
+        WithTooltip(stringResource(R.string.workout_show_demo), Modifier.align(Alignment.TopEnd)) {
+            IconToggleButton(
+                checked = howTo,
+                onCheckedChange = { howTo = it },
+                modifier = Modifier.padding(Dimens.SpaceS),
+            ) {
+                if (howTo) {
+                    Icon(painterResource(R.drawable.ic_image), stringResource(R.string.workout_show_demo))
+                } else {
+                    Icon(Icons.Filled.Info, stringResource(R.string.workout_show_how_to))
+                }
             }
         }
     }
@@ -903,6 +957,7 @@ private fun CountdownScreen(
             // A new exercise: its image and name (tap for its page).
             next != null -> item(key = "next") {
                 SegmentedListItem(
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onExerciseClick(next.id) },
                     shapes = segmentedShapes(index = 0, count = 1),
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -1140,6 +1195,7 @@ private fun LogSetSheet(
             }
             actions.forEachIndexed { index, action ->
                 SegmentedListItem(
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = action.onClick,
                     shapes = ListItemDefaults.segmentedShapes(index = index, count = actions.size),
                     supportingContent = { Text(stringResource(action.hint)) },

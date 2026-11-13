@@ -1,5 +1,9 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.components.WithTooltip
+import io.github.dimitrysaf.asko.lib.format.LocalDistanceUnit
+import io.github.dimitrysaf.asko.lib.format.distanceValueRes
+
 import io.github.dimitrysaf.asko.lib.format.WeightUnit
 import io.github.dimitrysaf.asko.lib.format.distanceNumber
 import io.github.dimitrysaf.asko.components.Shrug
@@ -23,7 +27,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import io.github.dimitrysaf.asko.components.pageContentPadding
 import android.os.VibrationEffect
@@ -115,13 +119,15 @@ fun WorkoutFinishedPage(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {},
                 actions = {
-                    IconButton(
-                        onClick = { workout?.let { onHistory(it.startedAt.atZone(ZoneId.systemDefault()).toLocalDate()) } },
-                        enabled = workout != null,
-                    ) { Icon(painterResource(R.drawable.ic_history), stringResource(R.string.finished_history)) }
+                    WithTooltip(stringResource(R.string.finished_history)) {
+                        IconButton(
+                            onClick = { workout?.let { onHistory(it.startedAt.atZone(ZoneId.systemDefault()).toLocalDate()) } },
+                            enabled = workout != null,
+                        ) { Icon(painterResource(R.drawable.ic_history), stringResource(R.string.finished_history)) }
+                    }
                     SubjectNotes(NoteSubject.WORKOUT, workoutId.toString())
                 },
             )
@@ -240,9 +246,10 @@ internal fun WorkoutStats(workout: Workout, first: Int, count: Int, animate: Boo
         StatRow(stringResource(R.string.finished_volume), volume, first + 3, count, animate) { resources.weightValue(number.format(it ?: 0), unit) }
         // With distance sets: how far, in all (counting up in metres).
         val meters = workout.distanceMeters
+        val distanceUnit = LocalDistanceUnit.current
         if (meters > 0) {
             StatRow(stringResource(R.string.finished_distance), meters.toInt(), first + 4, count, animate) {
-                resources.getString(if (unit == WeightUnit.LB) R.string.distance_mi_value else R.string.distance_km_value, unit.distanceNumber((it ?: 0).toDouble()))
+                resources.getString(distanceValueRes(distanceUnit), distanceUnit.distanceNumber((it ?: 0).toDouble()))
             }
         }
     }

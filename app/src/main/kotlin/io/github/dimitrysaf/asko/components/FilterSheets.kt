@@ -172,8 +172,8 @@ fun <T> MultiChoiceSheet(
             options.forEachIndexed { index, option ->
                 val ticked = option in selected
                 SegmentedListItem(
-                    checked = ticked,
-                    onCheckedChange = { onToggle(option) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    onClick = { onToggle(option) },
                     shapes = segmentedShapes(index, options.size),
                     leadingContent = { preview(option) },
                     trailingContent = { Checkbox(checked = ticked, onCheckedChange = null) },
@@ -227,7 +227,7 @@ internal fun ChoiceSheet(
             all.forEachIndexed { index, option ->
                 val chosen = option == selected
                 SegmentedListItem(
-                    selected = chosen,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = {
                         onSelect(option)
                         onDismiss()

@@ -2,6 +2,8 @@ package io.github.dimitrysaf.asko.data.importing
 
 import io.github.dimitrysaf.asko.data.model.SetType
 import io.github.dimitrysaf.asko.lib.format.WeightUnit
+import io.github.dimitrysaf.asko.lib.format.DistanceUnit
+import io.github.dimitrysaf.asko.lib.format.metersOf
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -42,16 +44,21 @@ internal class ParsedImport(val source: ImportSource, val workouts: List<Importe
 
 /**
  * Reads a Strong or Hevy CSV export. Weights and distances without a unit column are taken in
- * [unit] (kg and km, or lb and mi), as those apps export them in yours.
+ * [unit] and [distanceUnit] (Settings' units), as those apps export them in yours.
  */
-internal fun parseImport(text: String, unit: WeightUnit, zone: ZoneId = ZoneId.systemDefault()): ParsedImport? {
+internal fun parseImport(
+    text: String,
+    unit: WeightUnit,
+    distanceUnit: DistanceUnit = DistanceUnit.KM,
+    zone: ZoneId = ZoneId.systemDefault(),
+): ParsedImport? {
     val rows = parseCsv(text.removePrefix("﻿"), delimiterOf(text))
     val header = rows.firstOrNull()?.map { it.trim() } ?: return null
     val column = header.withIndex().associate { (i, name) -> name.lowercase() to i }
     val body = rows.drop(1).map { row -> Row(row, column) }
     return when {
         "exercise_title" in column && "start_time" in column -> ParsedImport(ImportSource.HEVY, hevy(body, zone))
-        "exercise name" in column && "date" in column -> ParsedImport(ImportSource.STRONG, strong(body, unit, zone))
+        "exercise name" in column && "date" in column -> ParsedImport(ImportSource.STRONG, strong(body, unit, distanceUnit, zone))
         else -> null
     }
 }
@@ -66,7 +73,7 @@ internal class Row(private val fields: List<String>, private val column: Map<Str
 // Strong: one row per set; "Date" and "Workout Name" tell the workouts apart, "Set Order" is the
 // set's number (or W, D, F for warm-up, drop and failure sets; "Rest Timer" rows are skipped).
 
-private fun strong(rows: List<Row>, unit: WeightUnit, zone: ZoneId): List<ImportedWorkout> =
+private fun strong(rows: List<Row>, unit: WeightUnit, distanceUnit: DistanceUnit, zone: ZoneId): List<ImportedWorkout> =
     rows.groupConsecutive { it["Date"] + "\u0000" + it["Workout Name"] }.mapNotNull { sets ->
         val first = sets.first()
         val started = parseDate(first["Date"], STRONG_DATES, zone) ?: return@mapNotNull null
@@ -88,7 +95,7 @@ private fun strong(rows: List<Row>, unit: WeightUnit, zone: ZoneId): List<Import
                                 "m" -> d
                                 "km" -> d * 1000
                                 "mi", "miles" -> d * METERS_PER_MILE
-                                else -> if (unit == WeightUnit.LB) d * METERS_PER_MILE else d * 1000
+                                else -> distanceUnit.metersOf(d)
                             }
                         }
                         ImportedSet(

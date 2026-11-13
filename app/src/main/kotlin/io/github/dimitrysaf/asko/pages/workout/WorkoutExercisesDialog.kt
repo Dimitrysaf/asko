@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -82,7 +83,9 @@ fun WorkoutExercisesDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS),
                 ) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.action_close)) }
+                    WithTooltip(stringResource(R.string.action_close)) {
+                        IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.action_close)) }
+                    }
                     Text(stringResource(R.string.workout_exercises), style = MaterialTheme.typography.titleLarge)
                 }
                 val items = viewModel.items
@@ -98,6 +101,7 @@ fun WorkoutExercisesDialog(
                             val logged = exercise.sets.count { it.status == SetStatus.DONE || it.status == SetStatus.FAILED }
                             val changeable = viewModel.canChange(exercise)
                             SegmentedListItem(
+                                verticalAlignment = Alignment.CenterVertically,
                                 selected = dragging || index == viewModel.exerciseIndex,
                                 onClick = {
                                     viewModel.openExercise(exercise.key)
@@ -120,11 +124,15 @@ fun WorkoutExercisesDialog(
                                 trailingContent = if (changeable) {
                                     {
                                         Row {
-                                            IconButton(onClick = { onSwap(exercise.key) }) {
-                                                Icon(painterResource(R.drawable.ic_swap), stringResource(R.string.workout_swap_exercise))
+                                            WithTooltip(stringResource(R.string.workout_swap_exercise)) {
+                                                IconButton(onClick = { onSwap(exercise.key) }) {
+                                                    Icon(painterResource(R.drawable.ic_swap), stringResource(R.string.workout_swap_exercise))
+                                                }
                                             }
-                                            IconButton(onClick = { viewModel.removeExercise(exercise.key) }) {
-                                                Icon(Icons.Filled.Delete, stringResource(R.string.routine_remove_exercise))
+                                            WithTooltip(stringResource(R.string.routine_remove_exercise)) {
+                                                IconButton(onClick = { viewModel.removeExercise(exercise.key) }) {
+                                                    Icon(Icons.Filled.Delete, stringResource(R.string.routine_remove_exercise))
+                                                }
                                             }
                                         }
                                     }

@@ -7,6 +7,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.ui.res.stringResource
 import io.github.dimitrysaf.asko.R
 import androidx.compose.animation.core.animateFloatAsState
@@ -22,6 +23,13 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.constants.Dimens
@@ -45,7 +53,9 @@ import kotlinx.coroutines.delay
  * muscles it works on wger's body, its main ones strong and the others lighter. The library's demo
  * is ExerciseDB's animation (sharpened, the free GIFs are small), free-exercise-db's photos shown
  * in turn (start, end, start…), so they read as the movement, or, for an exercise of yours, that
- * same muscle picture. With [onRemoveMedia], one of yours shows Remove in its corner.
+ * same muscle picture. With [onRemoveMedia], one of yours shows Remove in its corner. With
+ * [onAddMedia], a first page, left of your own (where new ones land), offers to add photos and
+ * videos (as many as you like); it opens one page in, on the first picture.
  */
 @Composable
 fun ExerciseDemo(
@@ -54,39 +64,60 @@ fun ExerciseDemo(
     modifier: Modifier = Modifier,
     fit: Boolean = false,
     onRemoveMedia: ((ExerciseMedia) -> Unit)? = null,
+    onAddMedia: (() -> Unit)? = null,
 ) {
     val own = ownMediaOf(exercise)
     // The muscles as a page of their own, unless the demo already is them (an exercise of yours).
     val muscles = LocalShowMuscles.current && !exercise.isDrawn && (exercise.mainMuscles + exercise.otherMuscles).isNotEmpty()
-    val pages = own.size + 1 + (if (muscles) 1 else 0)
+    val adding = onAddMedia != null
+    val pages = own.size + 1 + (if (muscles) 1 else 0) + (if (adding) 1 else 0)
     if (pages == 1) {
         LibraryDemo(exercise, shape, modifier)
         return
     }
-    val pager = rememberPagerState { pages }
+    // With the Add page first, everything else is one page further on.
+    val first = if (adding) 1 else 0
+    val pager = rememberPagerState(initialPage = first) { pages }
+    // Photos or videos just added come first: show the first of them.
+    var ownCount by remember { mutableIntStateOf(own.size) }
+    LaunchedEffect(own.size) {
+        if (own.size > ownCount) pager.animateScrollToPage(first)
+        ownCount = own.size
+    }
     Box(modifier) {
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), beyondViewportPageCount = 0) { page ->
+            val shown = page - first
             when {
-                page < own.size -> OwnMedia(own[page], shape, Modifier.fillMaxSize(), if (fit) ContentScale.Fit else ContentScale.Crop)
-                page == own.size -> LibraryDemo(exercise, shape, Modifier.fillMaxSize())
+                shown < 0 -> AddMediaPage(shape, Modifier.fillMaxSize(), onAddMedia ?: {})
+                shown < own.size -> OwnMedia(own[shown], shape, Modifier.fillMaxSize(), if (fit) ContentScale.Fit else ContentScale.Crop)
+                shown == own.size -> LibraryDemo(exercise, shape, Modifier.fillMaxSize())
                 else -> ExerciseArtwork(exercise, shape, Modifier.fillMaxSize())
             }
         }
         // On one of yours, Remove sits in its top-right corner.
-        val current = own.getOrNull(pager.currentPage)
+        val current = own.getOrNull(pager.currentPage - first)
         if (onRemoveMedia != null && current != null) {
-            FilledTonalIconButton(
-                onClick = { onRemoveMedia(current) },
-                modifier = Modifier.align(Alignment.TopEnd).padding(Dimens.SpaceS),
-            ) { Icon(Icons.Filled.Delete, stringResource(R.string.action_remove)) }
+            WithTooltip(stringResource(R.string.action_remove), Modifier.align(Alignment.TopEnd)) {
+                FilledTonalIconButton(
+                    onClick = { onRemoveMedia(current) },
+                    modifier = Modifier.padding(Dimens.SpaceS),
+                ) { Icon(Icons.Filled.Delete, stringResource(R.string.action_remove)) }
+            }
         }
         Row(
             Modifier.align(Alignment.BottomCenter).padding(Dimens.SpaceS)
                 .background(Color.Black.copy(alpha = 0.35f), CircleShape).padding(horizontal = 6.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             repeat(pages) { i ->
-                Box(Modifier.size(6.dp).background(if (i == pager.currentPage) Color.White else Color.White.copy(alpha = 0.45f), CircleShape))
+                val tint = if (i == pager.currentPage) Color.White else Color.White.copy(alpha = 0.45f)
+                if (adding && i == 0) {
+                    // The Add page isn't a picture: a small plus instead of its dot.
+                    Icon(Icons.Filled.Add, contentDescription = null, tint = tint, modifier = Modifier.size(8.dp))
+                } else {
+                    Box(Modifier.size(6.dp).background(tint, CircleShape))
+                }
             }
         }
     }
@@ -136,3 +167,24 @@ fun LibraryDemo(exercise: Exercise, shape: Shape, modifier: Modifier = Modifier)
 /** How long each photo shows, and the fade between them. */
 private const val PHOTO_MS = 1_000L
 private const val FADE_MS = 250
+
+/** The last page of an [ExerciseDemo] you can add to: a big image icon and its words; tap to pick. */
+@Composable
+private fun AddMediaPage(shape: Shape, modifier: Modifier, onAdd: () -> Unit) {
+    Column(
+        modifier
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(role = Role.Button, onClick = onAdd),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Dimens.SpaceS, Alignment.CenterVertically),
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_image),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(48.dp),
+        )
+        Text(stringResource(R.string.media_add), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+    }
+}

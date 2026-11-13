@@ -33,7 +33,8 @@ class AppContainer(context: Context) {
     private val database = AskoDatabase.build(context)
 
     /** Lives as long as the app: what repositories keep cached for every page runs here. */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** Work that outlives any page (Undo after a deleted page has closed, syncing). */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val settings = SettingsRepository(context)
 

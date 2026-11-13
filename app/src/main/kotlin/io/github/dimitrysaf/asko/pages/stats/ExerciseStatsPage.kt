@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import io.github.dimitrysaf.asko.data.stats.RecordEvent
 import io.github.dimitrysaf.asko.data.stats.RepMax
 import io.github.dimitrysaf.asko.data.stats.recordHistory
@@ -25,6 +26,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
@@ -62,7 +66,9 @@ fun ExerciseStatsPage(exerciseId: String, onBack: () -> Unit, onOpenExercise: ()
         title = viewModel.exercise?.name.orEmpty(),
         onBack = onBack,
         actions = {
-            IconButton(onClick = onOpenExercise) { Icon(Icons.Filled.Info, stringResource(R.string.stats_open_exercise)) }
+            WithTooltip(stringResource(R.string.stats_open_exercise)) {
+                IconButton(onClick = onOpenExercise) { Icon(Icons.Filled.Info, stringResource(R.string.stats_open_exercise)) }
+            }
         },
     ) { padding ->
         val done = history
@@ -83,7 +89,10 @@ fun ExerciseStatsPage(exerciseId: String, onBack: () -> Unit, onOpenExercise: ()
             contentPadding = pageContentPadding(padding),
             verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
         ) {
-            item(key = "training") { TrainingChart(done, shownId) }
+            item(key = "training") {
+                var metric by rememberSaveable { mutableStateOf(TrainingMetric.SETS) }
+                TrainingChart(done, metric, { metric = it }, shownId)
+            }
             if (allTime.bests.containsKey(RecordKind.HEAVIEST)) {
                 item(key = "weight") { WeightChart(done, shownId) }
             }

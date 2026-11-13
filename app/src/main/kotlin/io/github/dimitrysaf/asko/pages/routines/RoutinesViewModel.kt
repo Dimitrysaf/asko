@@ -44,6 +44,11 @@ class RoutinesViewModel(
         viewModelScope.launch { streaks.excuse(days, excuse) }
     }
 
+    /** Why [day] was missed, picked by holding it in the calendar (null: just missed). */
+    fun setExcuse(day: LocalDate, excuse: DayExcuse?) {
+        viewModelScope.launch { streaks.setExcuse(day, excuse) }
+    }
+
     /** The streak is gone; these days aren't asked about again. */
     fun letGo(days: List<LocalDate>) = streaks.letGo(days)
 

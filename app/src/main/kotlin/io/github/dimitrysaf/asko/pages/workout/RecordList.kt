@@ -1,8 +1,9 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.lib.format.LocalDistanceUnit
+
 import io.github.dimitrysaf.asko.lib.format.distanceValue
 import io.github.dimitrysaf.asko.lib.format.paceValue
-import io.github.dimitrysaf.asko.lib.format.metersPerDistanceUnit
 import java.time.Instant
 import io.github.dimitrysaf.asko.lib.format.formatDate
 import androidx.compose.foundation.background
@@ -104,5 +105,5 @@ fun recordValue(kind: RecordKind, value: Double): String = when (kind) {
     RecordKind.LONGEST_HOLD -> formatSeconds(value.toInt())
     RecordKind.LONGEST_DISTANCE -> distanceValue(value)
     // Stored as a speed (higher is faster); shown as the time per km (or mile).
-    RecordKind.FASTEST_PACE -> paceValue((LocalWeightUnit.current.metersPerDistanceUnit / value).roundToInt())
+    RecordKind.FASTEST_PACE -> paceValue((LocalDistanceUnit.current.meters / value).roundToInt())
 }

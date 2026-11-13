@@ -17,6 +17,9 @@ interface DayExcuseDao {
     @Upsert
     suspend fun upsert(days: List<DayExcuseEntity>)
 
+    @Query("DELETE FROM day_excuses WHERE epochDay = :epochDay")
+    suspend fun delete(epochDay: Long)
+
     @Query("DELETE FROM day_excuses")
     suspend fun deleteAll()
 }

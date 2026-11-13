@@ -1,5 +1,12 @@
 package io.github.dimitrysaf.asko.pages.history
 
+import io.github.dimitrysaf.asko.components.WithTooltip
+import io.github.dimitrysaf.asko.components.StreakDialog
+import io.github.dimitrysaf.asko.pages.routines.DayReasonSheet
+import io.github.dimitrysaf.asko.pages.routines.canGiveReason
+import io.github.dimitrysaf.asko.pages.routines.excuse
+import io.github.dimitrysaf.asko.components.StreakHeroSkeleton
+
 import io.github.dimitrysaf.asko.components.StreakHero
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
@@ -56,6 +63,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.dimitrysaf.asko.R
+import io.github.dimitrysaf.asko.components.ExerciseThumbnail
+import io.github.dimitrysaf.asko.data.model.Exercise
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
 import io.github.dimitrysaf.asko.components.EmptyState
 import io.github.dimitrysaf.asko.components.MonthCalendar
 import io.github.dimitrysaf.asko.components.PageScaffold
@@ -103,14 +115,28 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
                         .requiredSize(width = 48.dp, height = SearchBarDefaults.InputFieldHeight)
                         .onGloballyPositioned { searchState.collapsedCoords = it },
                 )
-                IconButton(onClick = { scope.launch { searchState.animateToExpanded() } }, enabled = history != null) {
-                    Icon(Icons.Filled.Search, stringResource(R.string.history_search))
+                WithTooltip(stringResource(R.string.history_search)) {
+                    IconButton(onClick = { scope.launch { searchState.animateToExpanded() } }, enabled = history != null) {
+                        Icon(Icons.Filled.Search, stringResource(R.string.history_search))
+                    }
                 }
             }
         },
     ) { padding ->
         val list = history
         val workoutDays = remember(list) { list?.map { it.startedAt.localDate() }?.toSet() }
+        var reasonDay by rememberSaveable { mutableStateOf<LocalDate?>(null) }
+        reasonDay?.let { day ->
+            DayReasonSheet(
+                day = day,
+                current = streak?.markOf(day).excuse(),
+                onPick = {
+                    viewModel.setExcuse(day, it)
+                    reasonDay = null
+                },
+                onDismiss = { reasonDay = null },
+            )
+        }
         // Tapping a day shows just that day's workouts; tapping it again (or Show all) clears it.
         var selectedDay by rememberSaveable { mutableStateOf(initialDay) }
         val shown = remember(list, selectedDay) {
@@ -124,15 +150,20 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
         ) {
             item(key = "calendar") {
                 // A segmented list: the streak, then the calendar (each day shows its mark).
+                // Until the streak is worked out, a skeleton holds its place, so nothing below moves.
                 val s = streak
-                val count = if (s != null) 2 else 1
+                val count = 2
                 Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape)
+                    var showingStreak by remember { mutableStateOf(false) }
+                    if (showingStreak && s != null) StreakDialog(s) { showingStreak = false }
+                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape, onClick = { showingStreak = true }) else StreakHeroSkeleton(segmentedShapes(0, count).shape)
                     Surface(shape = segmentedShapes(count - 1, count).shape, color = MaterialTheme.colorScheme.surfaceContainer) {
                         MonthCalendar(
                             workoutDays = workoutDays,
                             selected = selectedDay,
                             onDayClick = { day -> selectedDay = if (day == selectedDay) null else day },
+                            // Holding a missed day asks why: sick, travelling, or just missed.
+                            onDayLongClick = { day -> if (canGiveReason(day, workoutDays)) reasonDay = day },
                             marks = s?.let { it::markOf },
                             counts = s?.let { st -> { day: LocalDate -> st.counts(day) } },
                             modifier = Modifier.padding(Dimens.SpaceM),
@@ -170,7 +201,7 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
                     item(key = "workouts-$day") {
                         Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
                             workouts.forEachIndexed { index, workout ->
-                                HistoryEntry(workout, index, workouts.size, onClick = { onWorkoutClick(workout.id) })
+                                HistoryEntry(workout, viewModel.library, index, workouts.size, onClick = { onWorkoutClick(workout.id) })
                             }
                         }
                     }
@@ -193,13 +224,29 @@ fun HistoryPage(initialDay: LocalDate? = null, onWorkoutClick: (workoutId: Long)
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-internal fun HistoryEntry(workout: Workout, index: Int, count: Int, onClick: () -> Unit) {
+internal fun HistoryEntry(workout: Workout, library: Map<String, Exercise>, index: Int, count: Int, onClick: () -> Unit) {
     val times = workoutTimes(workout)
     val exercises = pluralStringResource(R.plurals.history_exercise_count, workout.exercises.size, workout.exercises.size)
     SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
         onClick = onClick,
         shapes = segmentedShapes(index, count),
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        // The first exercise's picture, as the routine rows show it; a list icon when there's none.
+        leadingContent = {
+            val firstId = workout.exercises.firstOrNull()?.exerciseId
+            val first = firstId?.let(library::get)
+            when {
+                first != null -> ExerciseThumbnail(first, Modifier.size(Dimens.ExerciseThumbnailSize))
+                firstId != null && library.isEmpty() -> SkeletonBox(Modifier.size(Dimens.ExerciseThumbnailSize), MaterialTheme.shapes.small)
+                else -> Box(
+                    Modifier.size(Dimens.ExerciseThumbnailSize).background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.small),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+        },
         supportingContent = { Text("$times\n$exercises") },
         content = { Text(workout.routineName ?: stringResource(R.string.history_workout)) },
     )

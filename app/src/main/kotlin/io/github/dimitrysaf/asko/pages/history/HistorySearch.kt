@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.history
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -63,13 +64,17 @@ internal fun HistorySearch(
                 onSearch = { keyboard?.hide() },
                 placeholder = { Text(stringResource(R.string.history_search)) },
                 leadingIcon = {
-                    IconButton(onClick = { scope.launch { state.animateToCollapsed() } }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
+                    WithTooltip(stringResource(R.string.action_back)) {
+                        IconButton(onClick = { scope.launch { state.animateToCollapsed() } }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back))
+                        }
                     }
                 },
                 trailingIcon = if (query.isEmpty()) null else {
                     {
-                        IconButton(onClick = { text.clearText() }) { Icon(Icons.Filled.Close, stringResource(R.string.action_clear_search)) }
+                        WithTooltip(stringResource(R.string.action_clear_search)) {
+                            IconButton(onClick = { text.clearText() }) { Icon(Icons.Filled.Close, stringResource(R.string.action_clear_search)) }
+                        }
                     }
                 },
             )
@@ -87,7 +92,7 @@ internal fun HistorySearch(
                     item(key = "workouts-$day") {
                         Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
                             workouts.forEachIndexed { index, workout ->
-                                HistoryEntry(workout, index, workouts.size, onClick = {
+                                HistoryEntry(workout, library, index, workouts.size, onClick = {
                                     // Out of the way at once, so the workout slides in over History.
                                     scope.launch {
                                         state.snapTo(0f)

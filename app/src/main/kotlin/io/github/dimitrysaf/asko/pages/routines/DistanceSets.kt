@@ -33,8 +33,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import io.github.dimitrysaf.asko.R
 import io.github.dimitrysaf.asko.constants.Dimens
 import io.github.dimitrysaf.asko.data.model.PlannedSet
-import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
-import io.github.dimitrysaf.asko.lib.format.WeightUnit
+import io.github.dimitrysaf.asko.lib.format.LocalDistanceUnit
+import io.github.dimitrysaf.asko.lib.format.DistanceUnit
 import io.github.dimitrysaf.asko.lib.format.distanceNumber
 import io.github.dimitrysaf.asko.lib.format.distanceValue
 import io.github.dimitrysaf.asko.lib.format.metersOf
@@ -77,7 +77,7 @@ internal fun DistanceTitles(columns: DistanceColumns) {
 /** One distance set, read-only: "5 km" · "25:00" · "5:00 /km", only the [columns] shown. */
 @Composable
 internal fun DistancePreviewRow(set: PlannedSet, number: Int?, columns: DistanceColumns, badge: @Composable () -> Unit = { SetBadge(set.type, number) }) {
-    val unit = LocalWeightUnit.current
+    val unit = LocalDistanceUnit.current
     Row(
         modifier = Modifier.padding(top = Dimens.SpaceS),
         verticalAlignment = Alignment.CenterVertically,
@@ -91,7 +91,7 @@ internal fun DistancePreviewRow(set: PlannedSet, number: Int?, columns: Distance
 
 /** The read-only value cells of a distance set, in a row: only the [columns] shown. */
 @Composable
-internal fun RowScope.DistanceCells(meters: Double?, seconds: Int?, columns: DistanceColumns, unit: WeightUnit = LocalWeightUnit.current) {
+internal fun RowScope.DistanceCells(meters: Double?, seconds: Int?, columns: DistanceColumns, unit: DistanceUnit = LocalDistanceUnit.current) {
     if (columns.distance) PreviewCell(meters?.let { distanceValue(it) }.orEmpty(), Modifier.weight(1f))
     if (columns.time) PreviewCell(seconds?.let(::formatSeconds).orEmpty(), Modifier.weight(1f))
     if (columns.pace) PreviewCell(unit.paceSeconds(meters, seconds)?.let { paceValue(it) }.orEmpty(), Modifier.weight(1f))
@@ -103,7 +103,7 @@ internal fun RowScope.DistanceCells(meters: Double?, seconds: Int?, columns: Dis
  */
 @Composable
 internal fun DistanceField(meters: Double?, onMeters: (Double?) -> Unit, modifier: Modifier = Modifier) {
-    val unit = LocalWeightUnit.current
+    val unit = LocalDistanceUnit.current
     var text by remember(unit) { mutableStateOf(meters?.let(unit::distanceNumber).orEmpty()) }
     // Changed from elsewhere (the set's sheet): show that instead of what was typed.
     LaunchedEffect(meters) {
@@ -128,7 +128,7 @@ internal fun DistanceField(meters: Double?, onMeters: (Double?) -> Unit, modifie
 /** How far, typed into a standard dialog in km (or mi), like the reps and weight dialogs; Log returns metres. */
 @Composable
 internal fun DistanceDialog(initialMeters: Double?, title: String, onLog: (Double) -> Unit, onDismiss: () -> Unit) {
-    val unit = LocalWeightUnit.current
+    val unit = LocalDistanceUnit.current
     var text by rememberSaveable { mutableStateOf(initialMeters?.takeIf { it > 0 }?.let(unit::distanceNumber).orEmpty()) }
     val meters = text.toDoubleOrNull()?.takeIf { it > 0 }?.let(unit::metersOf)
     val focus = remember { FocusRequester() }

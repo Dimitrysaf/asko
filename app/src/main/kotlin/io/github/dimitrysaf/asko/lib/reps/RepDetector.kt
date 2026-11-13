@@ -1,17 +1,21 @@
 package io.github.dimitrysaf.asko.lib.reps
 
+import io.github.dimitrysaf.asko.data.model.Muscle
+
 /** The joints the camera counter follows; their angles bend and straighten with each rep. */
 enum class Joint { ELBOW, KNEE, HIP }
 
 /**
  * Counts reps from joint angles, frame by frame (degrees, any of them missing when not seen).
  *
- * It doesn't need to know the exercise: each joint's angle is smoothed and its recent range kept;
- * the joint that swings the most (at least [minSwing] degrees) is the one followed, and once a rep
- * is counted it stays followed for the set. A rep is one full cycle: the angle goes past the low
- * end of its range, then back past the high end (a squat's knee bends, then straightens).
+ * The joint followed is [joint], from the exercise's muscles (see [jointFor]); without one, the
+ * joint that swings the most (at least [minSwing] degrees) is followed, and once a rep is counted
+ * it stays followed for the set. Each joint's angle is smoothed and its recent range kept. A rep is
+ * one full cycle: the angle goes past the low end of its range, then back past the high end (a
+ * squat's knee bends, then straightens).
  */
 class RepDetector(
+    private val joint: Joint? = null,
     private val minSwing: Double = 35.0,
     private val windowMs: Long = 5_000,
     private val smoothing: Double = 0.4,
@@ -24,7 +28,7 @@ class RepDetector(
     }
 
     private val tracks = Joint.entries.associateWith { Track() }
-    private var followed: Joint? = null
+    private var followed: Joint? = joint
 
     /** The joint being counted, once one swings enough; null before. */
     val following: Joint? get() = followed
@@ -42,8 +46,8 @@ class RepDetector(
             track.history.addLast(timeMs to smoothed)
             while (track.history.isNotEmpty() && timeMs - track.history.first().first > windowMs) track.history.removeFirst()
         }
-        // Until a rep is counted, follow whichever joint swings the most.
-        if (reps == 0) {
+        // No joint from the exercise: until a rep is counted, follow whichever swings the most.
+        if (joint == null && reps == 0) {
             val widest = tracks.maxByOrNull { (_, t) -> t.range()?.let { it.second - it.first } ?: 0.0 }
             val swing = widest?.value?.range()?.let { it.second - it.first } ?: 0.0
             if (widest != null && swing >= minSwing && widest.key != followed) {
@@ -67,3 +71,23 @@ class RepDetector(
         return false
     }
 }
+
+/**
+ * The joint an exercise's reps bend, from its main muscles: the knees for the quadriceps (squats,
+ * lunges), the hips for the glutes, hamstrings and abs (deadlifts, bridges, sit-ups), the elbows
+ * for the arms, chest, shoulders and back (curls, push-ups, presses, rows). Null when they say
+ * nothing usable (cardio, calves): the detector then finds the joint itself.
+ */
+fun jointFor(main: Set<Muscle>): Joint? = when {
+    Muscle.QUADRICEPS in main -> Joint.KNEE
+    Muscle.GLUTES in main || Muscle.HAMSTRINGS in main -> Joint.HIP
+    Muscle.ABDOMINALS in main || Muscle.OBLIQUES in main -> Joint.HIP
+    main.any { it in ARM_MOVERS } -> Joint.ELBOW
+    else -> null
+}
+
+/** Muscles whose exercises bend the elbows: arms, chest, shoulders, back. */
+private val ARM_MOVERS = setOf(
+    Muscle.BICEPS, Muscle.BRACHIALIS, Muscle.TRICEPS, Muscle.PECTORALS, Muscle.DELTOIDS,
+    Muscle.LATS, Muscle.TRAPEZIUS, Muscle.SERRATUS,
+)

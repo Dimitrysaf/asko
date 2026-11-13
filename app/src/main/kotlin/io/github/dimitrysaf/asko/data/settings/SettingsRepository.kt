@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.data.settings
 
+import io.github.dimitrysaf.asko.lib.format.DistanceUnit
+
 import android.content.Context
 import androidx.core.content.edit
 import io.github.dimitrysaf.asko.data.model.ExerciseSource
@@ -45,6 +47,18 @@ class SettingsRepository(context: Context) {
     fun setWeightUnit(unit: WeightUnit) {
         prefs.edit { putString(WEIGHT_UNIT, unit.name) }
         _weightUnit.value = unit
+    }
+
+    private val _distanceUnit = MutableStateFlow(
+        DistanceUnit.entries.firstOrNull { it.name == prefs.getString(DISTANCE_UNIT, null) } ?: DistanceUnit.KM,
+    )
+
+    /** The unit distances are shown and typed in (they're stored in metres either way). */
+    val distanceUnit: StateFlow<DistanceUnit> = _distanceUnit.asStateFlow()
+
+    fun setDistanceUnit(unit: DistanceUnit) {
+        prefs.edit { putString(DISTANCE_UNIT, unit.name) }
+        _distanceUnit.value = unit
     }
 
     private val _showMuscles = MutableStateFlow(prefs.getBoolean(SHOW_MUSCLES, true))
@@ -210,6 +224,7 @@ class SettingsRepository(context: Context) {
         const val REST_BUZZ = "rest_buzz"
         const val REST_SOUND = "rest_sound"
         const val WEIGHT_UNIT = "weight_unit"
+        const val DISTANCE_UNIT = "distance_unit"
         const val HEALTH_CONNECT = "health_connect"
         const val REP_COUNTER = "rep_counter"
         const val SAY_REPS = "say_reps"

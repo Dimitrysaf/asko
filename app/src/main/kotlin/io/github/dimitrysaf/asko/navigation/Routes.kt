@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.navigation
 
+import io.github.dimitrysaf.asko.pages.stats.StatsTile
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
@@ -39,6 +40,9 @@ import kotlinx.serialization.Serializable
 
 /** Statistics over all your workouts, from the Routines tab. */
 @Serializable data object StatsRoute : NavKey
+
+/** One Stats tile's page ([tile]: sets, reps, time or weight lifted), from Stats. */
+@Serializable data class StatsTileRoute(val tile: StatsTile) : NavKey
 
 /** One exercise's stats and charts ([exerciseId]), from Stats. */
 @Serializable data class ExerciseStatsRoute(val exerciseId: String) : NavKey

@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.pages.exercises
 
+import io.github.dimitrysaf.asko.components.HapticOnChange
+import io.github.dimitrysaf.asko.components.LocalAppSnackbar
+import io.github.dimitrysaf.asko.components.WithTooltip
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -46,6 +49,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import io.github.dimitrysaf.asko.pages.stats.TrainingMetric
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,10 +100,12 @@ fun ExerciseDetailPage(
     val loaded = (state as? ExerciseDetailState.Loaded)?.exercise
     val title = loaded?.name.orEmpty()
     // The system's photo picker: a photo, GIF or video of yours, shown first wherever it is.
-    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null && loaded != null) viewModel.addMedia(loaded.id, uri)
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (loaded != null) uris.forEach { viewModel.addMedia(loaded.id, it) }
     }
-    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
+    val snackbar = LocalAppSnackbar.current
+    val deletedMessage = stringResource(R.string.exercise_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
     PageScaffold(
         title = title,
         onBack = onBack,
@@ -107,23 +113,33 @@ fun ExerciseDetailPage(
         // The star: a favourite, for the Favourites filter.
         actions = {
             if (state is ExerciseDetailState.Loaded) {
-                IconToggleButton(checked = favourite, onCheckedChange = viewModel::setFavourite) {
-                    Icon(
-                        painterResource(if (favourite) R.drawable.ic_star else R.drawable.ic_star_outline),
-                        stringResource(if (favourite) R.string.exercise_unfavourite else R.string.exercise_favourite),
-                    )
+                WithTooltip(stringResource(if (favourite) R.string.exercise_unfavourite else R.string.exercise_favourite)) {
+                    HapticOnChange(favourite)
+                    IconToggleButton(checked = favourite, onCheckedChange = viewModel::setFavourite) {
+                        Icon(
+                            painterResource(if (favourite) R.drawable.ic_star else R.drawable.ic_star_outline),
+                            stringResource(if (favourite) R.string.exercise_unfavourite else R.string.exercise_favourite),
+                        )
+                    }
                 }
             }
             SubjectNotes(NoteSubject.EXERCISE, exerciseId)
             if (loaded != null) {
-                IconButton(onClick = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }) {
-                    Icon(painterResource(R.drawable.ic_image), stringResource(R.string.media_add))
-                }
             }
             // One of yours: Edit and Delete, as on a routine.
             loaded?.takeIf { it.source == ExerciseSource.CUSTOM }?.let { mine ->
-                IconButton(onClick = { onEdit(mine.id) }) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
-                IconButton(onClick = { confirmingDelete = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.action_delete)) }
+                WithTooltip(stringResource(R.string.action_edit)) {
+                    IconButton(onClick = { onEdit(mine.id) }) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
+                }
+                WithTooltip(stringResource(R.string.action_delete)) {
+                    IconButton(onClick = {
+                        // Deleted at once; the snackbar on the page underneath offers Undo.
+                        viewModel.retire(loaded.id) { undo ->
+                            onDeleted()
+                            snackbar.showUndo(deletedMessage, undoLabel, undo)
+                        }
+                    }) { Icon(Icons.Filled.Delete, stringResource(R.string.action_delete)) }
+                }
             }
         },
     ) { padding ->
@@ -142,26 +158,10 @@ fun ExerciseDetailPage(
                 onExerciseClick = onExerciseClick,
                 onOpenStats = onOpenStats,
                 onRemoveMedia = viewModel::removeMedia,
+                onAddMedia = { pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                 padding = padding,
             )
         }
-    }
-    if (confirmingDelete && loaded != null) {
-        AlertDialog(
-            onDismissRequest = { confirmingDelete = false },
-            title = { Text(stringResource(R.string.custom_delete_title, loaded.name)) },
-            text = { Text(stringResource(R.string.custom_delete_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmingDelete = false
-                        viewModel.retire(loaded.id, onDeleted)
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.action_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(stringResource(R.string.action_cancel)) } },
-        )
     }
 }
 
@@ -174,6 +174,7 @@ private fun ExerciseDetailContent(
     onExerciseClick: (exerciseId: String) -> Unit,
     onOpenStats: (exerciseId: String) -> Unit,
     onRemoveMedia: (ExerciseMedia) -> Unit,
+    onAddMedia: () -> Unit,
     padding: PaddingValues,
 ) {
     var removingMedia by remember { mutableStateOf<ExerciseMedia?>(null) }
@@ -211,6 +212,8 @@ private fun ExerciseDetailContent(
                     exercise = exercise,
                     // On a photo or video of yours: Remove, in its corner (asked first).
                     onRemoveMedia = { removingMedia = it },
+                    // The last page adds photos and videos, as many as you pick.
+                    onAddMedia = onAddMedia,
                     shape = MaterialTheme.shapes.large,
                     modifier = Modifier.widthIn(max = DemoMaxWidth).fillMaxWidth().aspectRatio(1f)
                         .clickable { viewingDemo = true },
@@ -244,12 +247,17 @@ private fun ExerciseDetailContent(
             item(key = "progress-title") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { SectionTitle(stringResource(R.string.exercise_progress)) }
-                    IconButton(onClick = { onOpenStats(exercise.id) }, modifier = Modifier.padding(top = Dimens.SpaceS)) {
-                        Icon(painterResource(R.drawable.ic_stats), stringResource(R.string.exercise_all_stats))
+                    WithTooltip(stringResource(R.string.exercise_all_stats)) {
+                        IconButton(onClick = { onOpenStats(exercise.id) }, modifier = Modifier.padding(top = Dimens.SpaceS)) {
+                            Icon(painterResource(R.drawable.ic_stats), stringResource(R.string.exercise_all_stats))
+                        }
                     }
                 }
             }
-            item(key = "progress-training") { TrainingChart(history, exercise.id) }
+            item(key = "progress-training") {
+                var metric by rememberSaveable { mutableStateOf(TrainingMetric.SETS) }
+                TrainingChart(history, metric, { metric = it }, exercise.id)
+            }
             if (allTime.bests.containsKey(RecordKind.HEAVIEST)) {
                 item(key = "progress-weight") { WeightChart(history, exercise.id) }
             }

@@ -37,10 +37,11 @@ class ExerciseDetailViewModel(
     private val customExercises: CustomExerciseRepository,
 ) : ViewModel() {
     /** Deletes an exercise of yours from the library (routines and workouts keep showing it), then [then]. */
-    fun retire(id: String, then: () -> Unit) {
+    /** Deletes (retires) the custom exercise, then [then] with what brings it back (for Undo). */
+    fun retire(id: String, then: (undo: suspend () -> Unit) -> Unit) {
         viewModelScope.launch {
             customExercises.retire(id)
-            then()
+            then { customExercises.unretire(id) }
         }
     }
 

@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko
 
+import io.github.dimitrysaf.asko.components.AppSnackbar
+import io.github.dimitrysaf.asko.components.LocalAppSnackbar
+import androidx.compose.runtime.remember
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -11,6 +14,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation3.runtime.NavKey
 import io.github.dimitrysaf.asko.lib.format.LocalWeightUnit
+import io.github.dimitrysaf.asko.lib.format.LocalDistanceUnit
 import io.github.dimitrysaf.asko.components.LocalExerciseMedia
 import io.github.dimitrysaf.asko.components.LocalShowMuscles
 import io.github.dimitrysaf.asko.lib.shortcuts.AppShortcuts
@@ -35,11 +39,13 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) open(intent)
         setContent {
             val weightUnit by container.settings.weightUnit.collectAsStateWithLifecycle()
+            val distanceUnit by container.settings.distanceUnit.collectAsStateWithLifecycle()
             val page by opening.collectAsStateWithLifecycle()
             val media by container.mediaRepository.media.collectAsStateWithLifecycle()
             val showMuscles by container.settings.showMuscles.collectAsStateWithLifecycle()
+            val snackbar = remember { AppSnackbar(container.appScope) }
             AskoTheme {
-                CompositionLocalProvider(LocalWeightUnit provides weightUnit, LocalExerciseMedia provides media, LocalShowMuscles provides showMuscles) {
+                CompositionLocalProvider(LocalAppSnackbar provides snackbar, LocalWeightUnit provides weightUnit, LocalDistanceUnit provides distanceUnit, LocalExerciseMedia provides media, LocalShowMuscles provides showMuscles) {
                     AskoNavHost(open = page, onOpened = { opening.value = null })
                 }
             }

@@ -90,10 +90,10 @@ class RoutineViewModel(
         }
     }
 
-    fun delete(onDeleted: () -> Unit) {
+    /** Deletes the routine, then [onDeleted] with what puts it back (for Undo). */
+    fun delete(onDeleted: (undo: suspend () -> Unit) -> Unit) {
         viewModelScope.launch {
-            routines.delete(routineId)
-            onDeleted()
+            onDeleted(routines.delete(routineId))
         }
     }
 }

@@ -1,5 +1,12 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.components.WithTooltip
+import io.github.dimitrysaf.asko.components.StreakDialog
+import io.github.dimitrysaf.asko.navigation.LocalTabShown
+import io.github.dimitrysaf.asko.components.RoutineListSkeleton
+
+import io.github.dimitrysaf.asko.components.StreakHeroSkeleton
+
 import io.github.dimitrysaf.asko.pages.workout.ActiveWorkoutViewModel
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,7 +59,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.dimitrysaf.asko.R
-import io.github.dimitrysaf.asko.components.ExerciseListSkeleton
 import io.github.dimitrysaf.asko.components.PageScaffold
 import io.github.dimitrysaf.asko.components.PillButton
 import io.github.dimitrysaf.asko.components.RoutineListItem
@@ -82,7 +88,8 @@ fun RoutinesPage(
     val streak by viewModel.streak.collectAsStateWithLifecycle()
     // A streak lost to missed days: ask why (once per session if the sheet is swiped away).
     var lostAsked by rememberSaveable { mutableStateOf(false) }
-    streak?.lost?.takeIf { !lostAsked }?.let { lost ->
+    // Only while this tab is the one shown (it stays built, hidden, behind the others).
+    streak?.lost?.takeIf { !lostAsked && LocalTabShown.current }?.let { lost ->
         LostStreakSheet(
             lost = lost,
             onExcuse = { excuse ->
@@ -94,6 +101,18 @@ fun RoutinesPage(
                 viewModel.letGo(lost.missed)
             },
             onDismiss = { lostAsked = true },
+        )
+    }
+    var reasonDay by rememberSaveable { mutableStateOf<LocalDate?>(null) }
+    reasonDay?.let { day ->
+        DayReasonSheet(
+            day = day,
+            current = streak?.markOf(day).excuse(),
+            onPick = {
+                viewModel.setExcuse(day, it)
+                reasonDay = null
+            },
+            onDismiss = { reasonDay = null },
         )
     }
     val routines by viewModel.list.collectAsStateWithLifecycle()
@@ -141,8 +160,12 @@ fun RoutinesPage(
     PageScaffold(
         title = stringResource(R.string.nav_routines),
         actions = {
-            IconButton(onClick = onStats) { Icon(painterResource(R.drawable.ic_stats), stringResource(R.string.stats_page_title)) }
-            IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.settings_title)) }
+            WithTooltip(stringResource(R.string.stats_page_title)) {
+                IconButton(onClick = onStats) { Icon(painterResource(R.drawable.ic_stats), stringResource(R.string.stats_page_title)) }
+            }
+            WithTooltip(stringResource(R.string.settings_title)) {
+                IconButton(onClick = onSettings) { Icon(Icons.Filled.Settings, stringResource(R.string.settings_title)) }
+            }
         },
     ) { padding ->
         // Routines sit at the segmented gap; everything else is set apart by the page's spacing.
@@ -154,14 +177,24 @@ fun RoutinesPage(
         ) {
             item(key = "week") {
                 // A segmented list: the streak, then this week (each day shows its mark).
+                // Until the streak is worked out, a skeleton holds its place, so nothing below moves.
                 val s = streak
-                val count = if (s != null) 2 else 1
+                val count = 2
                 Column(verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
-                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape)
+                    var showingStreak by remember { mutableStateOf(false) }
+                    if (showingStreak && s != null) StreakDialog(s) { showingStreak = false }
+                    if (s != null) StreakHero(s, segmentedShapes(0, count).shape, onClick = { showingStreak = true }) else StreakHeroSkeleton(segmentedShapes(0, count).shape)
                     Surface(shape = segmentedShapes(count - 1, count).shape, color = MaterialTheme.colorScheme.surfaceContainer) {
                         Column(Modifier.padding(Dimens.SpaceM), verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
                             Text(stringResource(R.string.routines_this_week), style = MaterialTheme.typography.titleMedium)
-                            WeekStreak(workoutDays, onDayClick, marks = s?.let { it::markOf }, counts = s?.let { st -> { day: LocalDate -> st.counts(day) } })
+                            WeekStreak(
+                                workoutDays,
+                                onDayClick,
+                                // Holding a missed day asks why: sick, travelling, or just missed.
+                                onDayLongClick = { day -> if (canGiveReason(day, workoutDays)) reasonDay = day },
+                                marks = s?.let { it::markOf },
+                                counts = s?.let { st -> { day: LocalDate -> st.counts(day) } },
+                            )
                         }
                     }
                 }
@@ -182,7 +215,7 @@ fun RoutinesPage(
             }
             val list = dragged ?: routines
             when {
-                list == null -> item(key = "routines-loading") { ExerciseListSkeleton(count = 3) }
+                list == null -> item(key = "routines-loading") { RoutineListSkeleton() }
                 list.isEmpty() -> item(key = "routines-empty") {
                     EmptyState(
                         rememberVectorPainter(Icons.AutoMirrored.Filled.List),
@@ -298,6 +331,7 @@ private fun LogChoiceSheet(resumingEmpty: Boolean, onStartEmpty: () -> Unit, onL
                 modifier = Modifier.padding(bottom = Dimens.SpaceM),
             )
             SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = onStartEmpty,
                 shapes = segmentedShapes(0, 2),
                 leadingContent = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
@@ -305,6 +339,7 @@ private fun LogChoiceSheet(resumingEmpty: Boolean, onStartEmpty: () -> Unit, onL
                 content = { Text(stringResource(if (resumingEmpty) R.string.log_choice_resume_empty else R.string.log_choice_empty)) },
             )
             SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = onLogPast,
                 shapes = segmentedShapes(1, 2),
                 leadingContent = { Icon(painterResource(R.drawable.ic_history), contentDescription = null) },

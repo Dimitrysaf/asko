@@ -23,6 +23,10 @@ android {
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+            // The everyday app on the phone, so not debuggable: Android then compiles it ahead of
+            // time and applies the libraries' performance profiles (startup ~1.4 s -> ~0.4 s, no
+            // dropped frames while idle). Set it to true for a debugging session.
+            isDebuggable = false
             // Test builds carry only 64-bit native code (ML Kit's is ~20 MB per CPU type): the
             // phone (arm64) and the emulator (x86_64). Release keeps every CPU type.
             ndk { abiFilters += listOf("arm64-v8a", "x86_64") }

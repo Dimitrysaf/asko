@@ -58,7 +58,7 @@ fun FolderSheet(current: String?, folders: List<String>, onPick: (String?) -> Un
             choices.forEachIndexed { index, folder ->
                 val selected = folder.equals(current, ignoreCase = true) || (folder == null && current == null)
                 SegmentedListItem(
-                    selected = selected,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onPick(folder) },
                     shapes = selectableSegmentedShapes(index, count),
                     leadingContent = { Icon(painterResource(R.drawable.ic_folder), contentDescription = null) },
@@ -71,7 +71,7 @@ fun FolderSheet(current: String?, folders: List<String>, onPick: (String?) -> Un
                 )
             }
             SegmentedListItem(
-                selected = false,
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = { naming = true },
                 shapes = selectableSegmentedShapes(count - 1, count),
                 leadingContent = { Icon(Icons.Filled.Add, contentDescription = null) },

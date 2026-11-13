@@ -11,9 +11,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,8 +39,8 @@ import java.time.temporal.WeekFields
 private const val MONTHS_BACK = 120
 
 /**
- * Swipeable month calendar ([DayRow]s): swipe or use ‹ › to change month (never past this one),
- * the Today chip jumps back. Opens on [selected]'s month, or this month. [workoutDays] null
+ * Swipeable month calendar ([DayRow]s of capsules): swipe or use the tonal ‹ › to change month
+ * (never past this one); Today jumps back. Opens on [selected]'s month, or this month. [workoutDays] null
  * means still loading.
  */
 @Composable
@@ -49,6 +49,7 @@ fun MonthCalendar(
     selected: LocalDate?,
     onDayClick: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
+    onDayLongClick: ((LocalDate) -> Unit)? = null,
     marks: ((LocalDate) -> DayMark?)? = null,
     counts: ((LocalDate) -> Boolean)? = null,
 ) {
@@ -74,23 +75,29 @@ fun MonthCalendar(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            if (pager.currentPage != lastPage) {
-                AssistChip(
-                    onClick = { scope.launch { pager.animateScrollToPage(lastPage) } },
-                    label = { Text(stringResource(R.string.calendar_today)) },
-                )
-            }
-            IconButton(
-                onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } },
-                enabled = pager.currentPage > 0,
-            ) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.calendar_previous_month))
-            }
-            IconButton(
-                onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
-                enabled = pager.currentPage < lastPage,
-            ) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.calendar_next_month))
+            // Google Health's period controls: back to now, then tonal round ‹ ›.
+            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceXs), verticalAlignment = Alignment.CenterVertically) {
+                if (pager.currentPage != lastPage) {
+                    FilledTonalButton(onClick = { scope.launch { pager.animateScrollToPage(lastPage) } }) {
+                        Text(stringResource(R.string.calendar_today))
+                    }
+                }
+                WithTooltip(stringResource(R.string.calendar_previous_month)) {
+                    FilledTonalIconButton(
+                        onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } },
+                        enabled = pager.currentPage > 0,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.calendar_previous_month))
+                    }
+                }
+                WithTooltip(stringResource(R.string.calendar_next_month)) {
+                    FilledTonalIconButton(
+                        onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
+                        enabled = pager.currentPage < lastPage,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, stringResource(R.string.calendar_next_month))
+                    }
+                }
             }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -116,6 +123,7 @@ fun MonthCalendar(
                         selected = selected,
                         muted = { YearMonth.from(it) != month },
                         onDayClick = onDayClick,
+                        onDayLongClick = onDayLongClick,
                         marks = marks,
                         counts = counts,
                     )

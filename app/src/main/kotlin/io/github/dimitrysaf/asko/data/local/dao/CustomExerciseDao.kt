@@ -24,6 +24,9 @@ interface CustomExerciseDao {
 
     @Query("UPDATE custom_exercises SET retired = 1 WHERE id = :id")
     suspend fun retire(id: String)
+
+    @Query("UPDATE custom_exercises SET retired = 0 WHERE id = :id")
+    suspend fun unretire(id: String)
 }
 
 @Dao

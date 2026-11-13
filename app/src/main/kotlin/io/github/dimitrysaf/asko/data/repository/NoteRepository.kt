@@ -38,6 +38,11 @@ class NoteRepository(private val dao: NoteDao) {
 
     suspend fun delete(noteId: Long) = dao.delete(noteId)
 
+    /** Puts a deleted note back as it was (when written, when edited), for Undo. */
+    suspend fun restore(subject: NoteSubject, id: String, note: Note) {
+        dao.insert(note.toEntity(subject, id).copy(id = 0))
+    }
+
     /** Everything about a subject that's gone (a deleted routine or workout). */
     suspend fun deleteFor(subject: NoteSubject, id: String) = dao.deleteFor(subject.name, id)
 

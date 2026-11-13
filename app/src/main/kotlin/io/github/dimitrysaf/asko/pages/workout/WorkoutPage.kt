@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.pages.workout
 
+import io.github.dimitrysaf.asko.components.LocalAppSnackbar
+import io.github.dimitrysaf.asko.components.WithTooltip
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,7 +62,9 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
     val viewModel = appViewModel { WorkoutViewModel(workoutId, it.workoutRepository, it.exerciseRepository) }
     val workout by viewModel.workout.collectAsStateWithLifecycle()
     val done = workout
-    var confirmingDelete by rememberSaveable { mutableStateOf(false) }
+    val snackbar = LocalAppSnackbar.current
+    val deletedMessage = stringResource(R.string.workout_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
     var sharing by remember { mutableStateOf(false) }
     val records by viewModel.records.collectAsStateWithLifecycle()
 
@@ -69,10 +73,18 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
         onBack = onBack,
         actions = {
             if (done != null) {
-                IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
+                WithTooltip(stringResource(R.string.action_edit)) {
+                    IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, stringResource(R.string.action_edit)) }
+                }
                 MoreMenu { close ->
                     MoreItem(stringResource(R.string.action_share), rememberVectorPainter(Icons.Filled.Share), close) { if (!sharing) sharing = true }
-                    MoreItem(stringResource(R.string.action_delete), rememberVectorPainter(Icons.Filled.Delete), close, destructive = true) { confirmingDelete = true }
+                    MoreItem(stringResource(R.string.action_delete), rememberVectorPainter(Icons.Filled.Delete), close, destructive = true) {
+                        // Deleted at once; the snackbar on the page underneath offers Undo.
+                        viewModel.delete { undo ->
+                            onBack()
+                            snackbar.showUndo(deletedMessage, undoLabel, undo)
+                        }
+                    }
                 }
             }
         },
@@ -112,23 +124,6 @@ fun WorkoutPage(workoutId: Long, onBack: () -> Unit, onEdit: () -> Unit, onExerc
         }
     }
 
-    if (confirmingDelete) {
-        AlertDialog(
-            onDismissRequest = { confirmingDelete = false },
-            title = { Text(stringResource(R.string.workout_delete_title)) },
-            text = { Text(stringResource(R.string.workout_delete_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmingDelete = false
-                        viewModel.delete(onBack)
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.action_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text(stringResource(R.string.action_cancel)) } },
-        )
-    }
 }
 
 /** "Started 18:30 · Took 52:10 · Finished 19:22"; without a known duration (logged afterwards), "Started 18:30". */

@@ -47,6 +47,11 @@ class StreakRepository(
         days.maxOrNull()?.let(settings::setStreakAskedThrough)
     }
 
+    /** Why [day] was missed, changed from the calendar: sick or travelling, or (null) just missed. */
+    suspend fun setExcuse(day: LocalDate, excuse: DayExcuse?) {
+        if (excuse == null) dao.delete(day.toEpochDay()) else dao.upsert(listOf(DayExcuseEntity(day.toEpochDay(), excuse.name)))
+    }
+
     /** The streak is let go: these missed days aren't asked about again. */
     fun letGo(days: List<LocalDate>) {
         days.maxOrNull()?.let(settings::setStreakAskedThrough)

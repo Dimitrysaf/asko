@@ -6,7 +6,7 @@ import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
 /** How far back a chart looks. */
-enum class StatsRange { MONTH, QUARTER, YEAR, ALL }
+enum class StatsRange { WEEK, MONTH, QUARTER, YEAR, ALL }
 
 /** How long one bar or point of a chart is. */
 enum class BucketSize { DAY, WEEK, MONTH }
@@ -30,11 +30,12 @@ fun bucketStart(day: LocalDate, size: BucketSize, firstDayOfWeek: DayOfWeek): Lo
 }
 
 /**
- * The timeline for [range] up to [today]: the last 30 days by day, 13 weeks by week, 12 months by
+ * The timeline for [range] up to [today]: the last 7 or 30 days by day, 13 weeks by week, 12 months by
  * month, or (all of it) by month from [earliest], at least two months.
  */
 fun timeline(range: StatsRange, today: LocalDate, earliest: LocalDate?, firstDayOfWeek: DayOfWeek): Timeline {
     val (size, count) = when (range) {
+        StatsRange.WEEK -> BucketSize.DAY to 7
         StatsRange.MONTH -> BucketSize.DAY to 30
         StatsRange.QUARTER -> BucketSize.WEEK to 13
         StatsRange.YEAR -> BucketSize.MONTH to 12

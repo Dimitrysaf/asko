@@ -96,12 +96,12 @@ fun PlateCalculatorSheet(onUse: (Double) -> Unit, onDismiss: () -> Unit) {
             )
 
             SegmentedListItem(
-                checked = twoBars,
-                onCheckedChange = { twoBars = it },
+                verticalAlignment = Alignment.CenterVertically,
+                onClick = { twoBars = !twoBars },
                 shapes = segmentedShapes(0, 1),
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 supportingContent = { Text(stringResource(R.string.calculator_two_bars_hint)) },
-                trailingContent = { Switch(checked = twoBars, onCheckedChange = null) },
+                trailingContent = { HapticSwitch(checked = twoBars) },
                 content = { Text(stringResource(R.string.calculator_two_bars)) },
             )
 

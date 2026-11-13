@@ -14,8 +14,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,12 +42,14 @@ private fun FullScreenViewer(onDismiss: () -> Unit, content: @Composable () -> U
     ) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
             content()
-            IconButton(
-                onClick = onDismiss,
-                colors = IconButtonDefaults.iconButtonColors(contentColor = Color.White),
-                modifier = Modifier.align(Alignment.TopStart).systemBarsPadding().padding(Dimens.SpaceS),
-            ) {
-                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close))
+            WithTooltip(stringResource(R.string.action_close), Modifier.align(Alignment.TopStart)) {
+                // Tonal, like Remove on your photos, so it shows on light pictures as well as dark.
+                FilledTonalIconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.systemBarsPadding().padding(Dimens.SpaceS),
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close))
+                }
             }
         }
     }

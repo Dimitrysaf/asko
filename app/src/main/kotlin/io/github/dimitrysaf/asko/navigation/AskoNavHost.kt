@@ -15,12 +15,25 @@ import io.github.dimitrysaf.asko.components.EmptyState
 import io.github.dimitrysaf.asko.pages.exercises.CustomExerciseEditorPage
 import io.github.dimitrysaf.asko.pages.stats.ExerciseStatsPage
 import io.github.dimitrysaf.asko.pages.stats.StatsPage
+import io.github.dimitrysaf.asko.pages.stats.StatsTilePage
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import kotlin.math.ceil
+import kotlin.math.floor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.key
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import kotlin.math.abs
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.Composable
 import androidx.navigation3.runtime.NavKey
@@ -59,13 +72,22 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
     val root = backStack.firstOrNull()
     // Tabs match by page type, so History opened on a day (HistoryRoute("2026-11-10")) still highlights its tab.
     fun isCurrentTab(destination: TopLevelDestination) = root != null && root::class == destination.route::class
-    val goBack: () -> Unit = { backStack.removeLastOrNull() }
+    // The system back: never past the tab.
+    val goBack: () -> Unit = { if (backStack.size > 1) backStack.removeLastOrNull() }
 
-    // Which way the pages slide when the tab (the root page) changes: towards the new tab's side.
-    var tabDirection by remember { mutableIntStateOf(1) }
-    fun tabIndex(route: NavKey) = TopLevelDestination.entries.indexOfFirst { it.route::class == route::class }
+    // Only the page on top acts. A page still sliding in or out keeps getting taps, so without
+    // this a quick second tap opened a page twice, back pressed twice popped two pages (or the
+    // tab itself), and a page sliding away could open pages of its own.
+    fun NavKey.isTop() = backStack.lastOrNull() == this
+    fun NavKey.open(route: NavKey) {
+        if (isTop()) backStack.add(route)
+    }
+    fun NavKey.back() {
+        if (isTop() && backStack.size > 1) backStack.removeLastOrNull()
+    }
+
+    // A new tab (root page); the tab strip slides to it.
     fun switchRoot(route: NavKey) {
-        tabDirection = if (tabIndex(route) >= (root?.let(::tabIndex) ?: 0)) 1 else -1
         backStack.clear()
         backStack.add(route)
     }
@@ -73,7 +95,6 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
     LaunchedEffect(open) {
         if (open == null) return@LaunchedEffect
         if (backStack.lastOrNull() != open) {
-            tabDirection = 1
             backStack.clear()
             backStack.add(RoutinesRoute)
             backStack.add(open)
@@ -90,35 +111,41 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
     val tabsPage: @Composable () -> Unit = {
         TabsPage(
             root = root ?: RoutinesRoute,
-            direction = tabDirection,
             isCurrentTab = ::isCurrentTab,
             onTab = { destination -> if (!isCurrentTab(destination)) switchRoot(destination.route) },
         ) { tab ->
+            // The tab acts only while it's the one shown and nothing is open over it.
+            fun open(route: NavKey) {
+                if (backStack.size == 1 && backStack.firstOrNull() == tab) backStack.add(route)
+            }
+            fun switchFromTab(route: NavKey) {
+                if (backStack.size == 1 && backStack.firstOrNull() == tab) switchRoot(route)
+            }
             when (tab) {
                 is RoutinesRoute -> {
                     RoutinesPage(
                         onDayClick = { day ->
-                            switchRoot(HistoryRoute(day.toString()))
+                            switchFromTab(HistoryRoute(day.toString()))
                         },
-                        onLog = { backStack.add(LogWorkoutRoute) },
-                        onCreateRoutine = { name -> backStack.add(RoutineEditorRoute(name = name)) },
-                        onRoutineClick = { id -> backStack.add(RoutineRoute(id)) },
-                        onResumeWorkout = { id -> backStack.add(ActiveWorkoutRoute(id)) },
-                        onStartRoutine = { id -> backStack.add(ActiveWorkoutRoute(id)) },
-                        onSettings = { backStack.add(SettingsRoute) },
-                        onStats = { backStack.add(StatsRoute) },
+                        onLog = { open(LogWorkoutRoute) },
+                        onCreateRoutine = { name -> open(RoutineEditorRoute(name = name)) },
+                        onRoutineClick = { id -> open(RoutineRoute(id)) },
+                        onResumeWorkout = { id -> open(ActiveWorkoutRoute(id)) },
+                        onStartRoutine = { id -> open(ActiveWorkoutRoute(id)) },
+                        onSettings = { open(SettingsRoute) },
+                        onStats = { open(StatsRoute) },
                     )
                 }
                 is DiscoveryRoute -> {
                     DiscoveryPage(
-                        onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
-                        onCreateExercise = { name -> backStack.add(CustomExerciseEditorRoute(name = name)) },
+                        onExerciseClick = { id -> open(ExerciseDetailRoute(id)) },
+                        onCreateExercise = { name -> open(CustomExerciseEditorRoute(name = name)) },
                     )
                 }
                 is HistoryRoute -> {
                     HistoryPage(
                         initialDay = tab.day?.let(LocalDate::parse),
-                        onWorkoutClick = { id -> backStack.add(WorkoutRoute(id)) },
+                        onWorkoutClick = { id -> open(WorkoutRoute(id)) },
                     )
                 }
                 else -> {}
@@ -130,23 +157,25 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
         entry<RoutineRoute> { key ->
             RoutinePage(
                 routineId = key.routineId,
-                onBack = goBack,
-                onEdit = { backStack.add(RoutineEditorRoute(key.routineId)) },
-                onOpenRoutine = { id -> backStack.add(RoutineRoute(id)) },
-                onStart = { backStack.add(ActiveWorkoutRoute(key.routineId)) },
-                onResumeWorkout = { id -> backStack.add(ActiveWorkoutRoute(id)) },
-                onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
+                onBack = { key.back() },
+                onEdit = { key.open(RoutineEditorRoute(key.routineId)) },
+                onOpenRoutine = { id -> key.open(RoutineRoute(id)) },
+                onStart = { key.open(ActiveWorkoutRoute(key.routineId)) },
+                onResumeWorkout = { id -> key.open(ActiveWorkoutRoute(id)) },
+                onExerciseClick = { id -> key.open(ExerciseDetailRoute(id)) },
             )
         }
         entry<RoutineEditorRoute> { key ->
             RoutineEditorPage(
                 routineId = key.routineId,
                 initialName = key.name,
-                onBack = goBack,
+                onBack = { key.back() },
                 onSaved = { id ->
                     // Editing: back to the routine. Creating: the editor becomes the new routine's page.
-                    if (backStack.lastOrNull() == key) backStack.removeLastOrNull()
-                    if (backStack.lastOrNull() != RoutineRoute(id)) backStack.add(RoutineRoute(id))
+                    if (key.isTop()) {
+                        backStack.removeLastOrNull()
+                        if (backStack.lastOrNull() != RoutineRoute(id)) backStack.add(RoutineRoute(id))
+                    }
                 },
             )
         }
@@ -154,58 +183,65 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
             WorkoutFinishedPage(
                 workoutId = key.workoutId,
                 routineName = key.routineName,
-                onDone = goBack,
+                onDone = { key.back() },
                 onHistory = { day ->
-                    switchRoot(HistoryRoute(day.toString()))
+                    if (key.isTop()) switchRoot(HistoryRoute(day.toString()))
                 },
-                onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
+                onExerciseClick = { id -> key.open(ExerciseDetailRoute(id)) },
             )
         }
-        entry<StatsRoute> {
-            StatsPage(onBack = goBack, onExerciseClick = { id -> backStack.add(ExerciseStatsRoute(id)) })
+        entry<StatsRoute> { key ->
+            StatsPage(
+                onBack = { key.back() },
+                onExerciseClick = { id -> key.open(ExerciseStatsRoute(id)) },
+                onOpenTile = { key.open(StatsTileRoute(it)) },
+            )
+        }
+        entry<StatsTileRoute> { key ->
+            StatsTilePage(tile = key.tile, onBack = { key.back() }, onExerciseClick = { id -> key.open(ExerciseStatsRoute(id)) })
         }
         entry<ExerciseStatsRoute> { key ->
             ExerciseStatsPage(
                 exerciseId = key.exerciseId,
-                onBack = goBack,
-                onOpenExercise = { backStack.add(ExerciseDetailRoute(key.exerciseId)) },
+                onBack = { key.back() },
+                onOpenExercise = { key.open(ExerciseDetailRoute(key.exerciseId)) },
             )
         }
-        entry<SettingsRoute> {
-            SettingsPage(onBack = goBack)
+        entry<SettingsRoute> { key ->
+            SettingsPage(onBack = { key.back() })
         }
         entry<WorkoutEditRoute> { key ->
             LogWorkoutPage(
                 workoutId = key.workoutId,
-                onBack = goBack,
+                onBack = { key.back() },
                 // Saved: back to the workout, which shows the change.
                 onLogged = { if (backStack.lastOrNull() == key) backStack.removeLastOrNull() },
             )
         }
-        entry<LogWorkoutRoute> {
+        entry<LogWorkoutRoute> { key ->
             LogWorkoutPage(
-                onBack = goBack,
+                onBack = { key.back() },
                 // Logged: show it in History on its day.
                 onLogged = { day ->
-                    switchRoot(HistoryRoute(day.toString()))
+                    if (key.isTop()) switchRoot(HistoryRoute(day.toString()))
                 },
             )
         }
         entry<WorkoutRoute> { key ->
             WorkoutPage(
                 workoutId = key.workoutId,
-                onBack = goBack,
-                onEdit = { backStack.add(WorkoutEditRoute(key.workoutId)) },
-                onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
+                onBack = { key.back() },
+                onEdit = { key.open(WorkoutEditRoute(key.workoutId)) },
+                onExerciseClick = { id -> key.open(ExerciseDetailRoute(id)) },
             )
         }
         entry<ExerciseDetailRoute> { key ->
             ExerciseDetailPage(
                 exerciseId = key.exerciseId,
-                onBack = goBack,
-                onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
-                onOpenStats = { id -> backStack.add(ExerciseStatsRoute(id)) },
-                onEdit = { id -> backStack.add(CustomExerciseEditorRoute(id)) },
+                onBack = { key.back() },
+                onExerciseClick = { id -> key.open(ExerciseDetailRoute(id)) },
+                onOpenStats = { id -> key.open(ExerciseStatsRoute(id)) },
+                onEdit = { id -> key.open(CustomExerciseEditorRoute(id)) },
                 onDeleted = { if (backStack.lastOrNull() == key) backStack.removeLastOrNull() },
             )
         }
@@ -213,19 +249,21 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
             CustomExerciseEditorPage(
                 exerciseId = key.exerciseId,
                 initialName = key.name,
-                onBack = goBack,
+                onBack = { key.back() },
                 // Made: the editor becomes its page. Changed: back to its page.
                 onSaved = { id ->
-                    if (backStack.lastOrNull() == key) backStack.removeLastOrNull()
-                    if (backStack.lastOrNull() != ExerciseDetailRoute(id)) backStack.add(ExerciseDetailRoute(id))
+                    if (key.isTop()) {
+                        backStack.removeLastOrNull()
+                        if (backStack.lastOrNull() != ExerciseDetailRoute(id)) backStack.add(ExerciseDetailRoute(id))
+                    }
                 },
             )
         }
         entry<ActiveWorkoutRoute> { key ->
             ActiveWorkoutPage(
                 routineId = key.routineId,
-                onBack = goBack,
-                onExerciseClick = { id -> backStack.add(ExerciseDetailRoute(id)) },
+                onBack = { key.back() },
+                onExerciseClick = { id -> key.open(ExerciseDetailRoute(id)) },
                 // Finished: the workout becomes its summary; with nothing logged, just back.
                 onFinished = { id, name ->
                     if (backStack.lastOrNull() == key) {
@@ -285,23 +323,41 @@ fun AskoNavHost(open: NavKey? = null, onOpened: () -> Unit = {}) {
 /** How much of a wide window the tab takes; what it opens gets the rest. */
 private const val ListPaneWeight = 0.45f
 
+/** Whether the tab this is in is the one shown (false while it waits, hidden, behind another). */
+val LocalTabShown = compositionLocalOf { true }
+
 /**
  * The tabs as one page: NavigationSuiteScaffold (the expressive short navigation bar on phones, the
- * wide rail on tablets) around the current tab's page ([root]), which slides in from the side its
- * tab sits on ([direction] 1: from the right). Each tab keeps its scroll position and such.
+ * wide rail on tablets) around the tabs, laid side by side on one strip in the bar's order, like
+ * a pager. Switching tab moves the strip to it ([root]): the pane slides left or right, passing
+ * any tab between. However fast you switch, it's the one strip turning round, never pages on top
+ * of each other; a quick switch there and back barely moves it.
+ *
+ * A tab is built the first time it comes into view and then kept (off screen it isn't placed,
+ * so not drawn and not touchable), so switching rebuilds nothing.
  */
 @Composable
 private fun TabsPage(
     root: NavKey,
-    direction: Int,
     isCurrentTab: (TopLevelDestination) -> Boolean,
     onTab: (TopLevelDestination) -> Unit,
     content: @Composable (NavKey) -> Unit,
 ) {
     val states = rememberSaveableStateHolder()
+    val tabs = TopLevelDestination.entries
+    fun indexOf(route: NavKey) = tabs.indexOfFirst { it.route::class == route::class }.coerceAtLeast(0)
+    val target = indexOf(root)
+    // Where the strip is, in tabs: 0 shows the first tab, 1.5 half of the second and the third.
+    val position = remember { Animatable(target.toFloat()) }
+    LaunchedEffect(target) { position.animateTo(target.toFloat(), TabSlideSpec) }
+    // Each tab's latest route (History may be opened on a day), once it has come into view.
+    val routes = remember { mutableStateMapOf<Int, NavKey>() }
+    if (routes[target] != root) routes[target] = root
+    val inView by remember { derivedStateOf { floor(position.value).toInt()..ceil(position.value).toInt() } }
+    for (i in inView) if (i !in routes) routes[i] = tabs[i].route
     NavigationSuiteScaffold(
         navigationSuiteItems = {
-            TopLevelDestination.entries.forEach { destination ->
+            tabs.forEach { destination ->
                 item(
                     selected = isCurrentTab(destination),
                     onClick = { onTab(destination) },
@@ -312,12 +368,38 @@ private fun TabsPage(
         },
         layoutType = NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfo()),
     ) {
-        AnimatedContent(
-            targetState = root,
-            transitionSpec = { tabSlide(direction) },
-            label = "tab",
-        ) { tab ->
-            states.SaveableStateProvider(tab.toString()) { content(tab) }
+        Box(Modifier.fillMaxSize().clipToBounds()) {
+            routes.keys.sorted().forEach { i ->
+                val route = routes.getValue(i)
+                key(i) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .layout { measurable, constraints ->
+                                val placeable = measurable.measure(constraints)
+                                layout(placeable.width, placeable.height) {
+                                    // Its place on the strip, relative to where the strip is.
+                                    val shift = i - position.value
+                                    if (abs(shift) < 1f) {
+                                        placeable.placeWithLayer(0, 0) { translationX = shift * placeable.width }
+                                    }
+                                }
+                            },
+                    ) {
+                        CompositionLocalProvider(LocalTabShown provides (i == target)) {
+                            key(route) {
+                                states.SaveableStateProvider(route.toString()) { content(route) }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
+
+/**
+ * The strip's slide: a spring with no bounce, about as quick as a page's slide. A spring, so a
+ * switch made mid-slide carries on from the strip's speed instead of jolting.
+ */
+private val TabSlideSpec = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 500f)

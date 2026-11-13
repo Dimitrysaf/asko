@@ -56,7 +56,7 @@ import io.github.dimitrysaf.asko.data.model.Exercise
 import io.github.dimitrysaf.asko.data.repository.matching
 
 /**
- * Search field, filter chips (Favourites, Muscle group, Equipment) and a segmented exercise list:
+ * Search field, filter chips (Muscle group, Equipment) and a segmented exercise list:
  * while browsing, Favourites and Recently used on top, then A–Z sections (exercises in the top
  * sections stay in their letter's section too);
  * while searching, best match first. Used by Discovery and the routine exercise picker; [trailing]
@@ -78,14 +78,12 @@ fun ExerciseBrowser(
     var query by rememberSaveable { mutableStateOf("") }
     var muscleGroup by rememberSaveable { mutableStateOf<String?>(null) }
     var equipment by rememberSaveable { mutableStateOf<String?>(null) }
-    var favouritesOnly by rememberSaveable { mutableStateOf(false) }
-    val results = remember(exercises, query, muscleGroup, equipment, favouritesOnly, favourites) {
-        exercises.matching(query, muscleGroup, equipment).filter { !favouritesOnly || it.id in favourites }
+    val results = remember(exercises, query, muscleGroup, equipment) {
+        exercises.matching(query, muscleGroup, equipment)
     }
     // The top sections, as filtered; only while browsing (a search sorts by match instead).
-    // Favourites only when the list isn't already just them (the Favourites chip).
-    val favouriteResults = remember(results, favourites, query, favouritesOnly) {
-        if (query.isNotBlank() || favouritesOnly) emptyList() else results.filter { it.id in favourites }
+    val favouriteResults = remember(results, favourites, query) {
+        if (query.isNotBlank()) emptyList() else results.filter { it.id in favourites }
     }
     val recentResults = remember(results, recent, query) {
         if (query.isNotBlank()) emptyList() else results.associateBy { it.id }.let { shown -> recent.mapNotNull(shown::get) }
@@ -97,9 +95,6 @@ fun ExerciseBrowser(
         SearchField(query = query, onQueryChange = { query = it }, modifier = Modifier.padding(top = Dimens.SpaceS))
         FilterChips(
             exercises = exercises,
-            showFavourites = favourites.isNotEmpty() || favouritesOnly,
-            favouritesOnly = favouritesOnly,
-            onFavouritesOnlyChange = { favouritesOnly = it },
             muscleGroup = muscleGroup,
             onMuscleGroupChange = { muscleGroup = it },
             equipment = equipment,
@@ -110,7 +105,7 @@ fun ExerciseBrowser(
             grouped = query.isBlank(),
             // Fresh scroll position per search/filter (starts at the best match); saved per key,
             // so coming back from an exercise page restores it.
-            listState = key(query, muscleGroup, equipment, favouritesOnly) { rememberLazyListState() }.also { state ->
+            listState = key(query, muscleGroup, equipment) { rememberLazyListState() }.also { state ->
                 val atTop by remember(state) { derivedStateOf { state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0 } }
                 LaunchedEffect(atTop) { onAtTop(atTop) }
             },
@@ -150,8 +145,10 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         trailingIcon = if (query.isEmpty()) null else {
             {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Close, stringResource(R.string.action_clear_search))
+                WithTooltip(stringResource(R.string.action_clear_search)) {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Filled.Close, stringResource(R.string.action_clear_search))
+                    }
                 }
             }
         },
@@ -169,9 +166,6 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier
 @Composable
 private fun FilterChips(
     exercises: List<Exercise>,
-    showFavourites: Boolean,
-    favouritesOnly: Boolean,
-    onFavouritesOnlyChange: (Boolean) -> Unit,
     muscleGroup: String?,
     onMuscleGroupChange: (String?) -> Unit,
     equipment: String?,
@@ -185,20 +179,6 @@ private fun FilterChips(
     }
     // Scrolls sideways when the chips don't fit the width.
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceS)) {
-        if (showFavourites) {
-            FilterChip(
-                selected = favouritesOnly,
-                onClick = { onFavouritesOnlyChange(!favouritesOnly) },
-                label = { Text(stringResource(R.string.discovery_favourites)) },
-                leadingIcon = {
-                    Icon(
-                        painterResource(if (favouritesOnly) R.drawable.ic_star else R.drawable.ic_star_outline),
-                        contentDescription = null,
-                        modifier = Modifier.size(FilterChipDefaults.IconSize),
-                    )
-                },
-            )
-        }
         SheetFilterChip(stringResource(R.string.discovery_muscle_group), muscleGroup) { close ->
             MuscleGroupSheet(muscleGroups, muscleGroup, onMuscleGroupChange, close)
         }

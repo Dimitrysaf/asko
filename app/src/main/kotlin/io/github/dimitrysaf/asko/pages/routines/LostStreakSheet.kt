@@ -1,5 +1,11 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.platform.LocalConfiguration
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -67,6 +73,7 @@ fun LostStreakSheet(
                 modifier = Modifier.padding(top = Dimens.SpaceXs, bottom = Dimens.SpaceM),
             )
             SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = { checking = DayExcuse.SICK },
                 shapes = segmentedShapes(0, 3),
                 leadingContent = { DayMarkIcon(DayMark.SICK, size = 24.dp) },
@@ -74,6 +81,7 @@ fun LostStreakSheet(
                 content = { Text(stringResource(R.string.streak_fell_ill)) },
             )
             SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = { checking = DayExcuse.TRAVEL },
                 shapes = segmentedShapes(1, 3),
                 leadingContent = { DayMarkIcon(DayMark.TRAVEL, size = 24.dp) },
@@ -81,6 +89,7 @@ fun LostStreakSheet(
                 content = { Text(stringResource(R.string.streak_travelling)) },
             )
             SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
                 onClick = onLetGo,
                 shapes = segmentedShapes(2, 3),
                 leadingContent = { Icon(Icons.Filled.Close, contentDescription = null) },
@@ -110,4 +119,67 @@ fun LostStreakSheet(
             },
         )
     }
+}
+
+/**
+ * Why [day] was missed, from holding it in a calendar: Fell ill, Travelling (both keep the streak
+ * going) or I just missed it, the [current] reason's button on. Picking one calls [onPick] (null
+ * for just missed).
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun DayReasonSheet(day: LocalDate, current: DayExcuse?, onPick: (DayExcuse?) -> Unit, onDismiss: () -> Unit) {
+    val locale = LocalConfiguration.current.locales[0]
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = Dimens.PageGutter, end = Dimens.PageGutter, bottom = Dimens.SpaceL),
+            verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
+        ) {
+            Text(
+                stringResource(R.string.day_reason_title, day.format(DateTimeFormatter.ofPattern("EEEE d MMMM", locale))),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(bottom = Dimens.SpaceM),
+            )
+            val options = listOf(DayExcuse.SICK, DayExcuse.TRAVEL, null)
+            options.forEachIndexed { index, option ->
+                SegmentedListItem(
+                    verticalAlignment = Alignment.CenterVertically,
+                    onClick = { onPick(option) },
+                    shapes = segmentedShapes(index, options.size),
+                    leadingContent = {
+                        when (option) {
+                            DayExcuse.SICK -> DayMarkIcon(DayMark.SICK, size = 24.dp)
+                            DayExcuse.TRAVEL -> DayMarkIcon(DayMark.TRAVEL, size = 24.dp)
+                            null -> Icon(Icons.Filled.Close, contentDescription = null)
+                        }
+                    },
+                    trailingContent = { RadioButton(selected = option == current, onClick = null) },
+                    content = {
+                        Text(
+                            stringResource(
+                                when (option) {
+                                    DayExcuse.SICK -> R.string.streak_fell_ill
+                                    DayExcuse.TRAVEL -> R.string.streak_travelling
+                                    null -> R.string.streak_just_missed
+                                },
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+/** A day that can be given a reason: up to today, with no workout on it ([workoutDays]). */
+fun canGiveReason(day: LocalDate, workoutDays: Set<LocalDate>?): Boolean =
+    workoutDays != null && day !in workoutDays && !day.isAfter(LocalDate.now())
+
+/** The reason a day already has, from its streak mark. */
+fun DayMark?.excuse(): DayExcuse? = when (this) {
+    DayMark.SICK -> DayExcuse.SICK
+    DayMark.TRAVEL -> DayExcuse.TRAVEL
+    else -> null
 }

@@ -1,5 +1,6 @@
 package io.github.dimitrysaf.asko.pages.routines
 
+import io.github.dimitrysaf.asko.components.WithTooltip
 import io.github.dimitrysaf.asko.components.SubjectNotes
 import io.github.dimitrysaf.asko.data.model.NoteSubject
 import io.github.dimitrysaf.asko.components.segmentedShapes
@@ -77,7 +78,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TimePickerDialog
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -198,7 +199,7 @@ fun PlanEditorScaffold(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 navigationIcon = {
                     Button(
                         onClick = discard,
@@ -446,11 +447,13 @@ private fun ExerciseBlock(
                     SubjectNotes(NoteSubject.EXERCISE, item.exerciseId, tonal = true)
                     // Superset with the exercise after it: on, it stays lit to show the link.
                     if (canSuperset) {
-                        FilledTonalIconToggleButton(
-                            checked = item.supersetWithNext,
-                            onCheckedChange = { viewModel.setSuperset(item.key, it) },
-                        ) {
-                            Icon(painterResource(R.drawable.ic_link), stringResource(R.string.routine_superset_with_next))
+                        WithTooltip(stringResource(R.string.routine_superset_with_next)) {
+                            FilledTonalIconToggleButton(
+                                checked = item.supersetWithNext,
+                                onCheckedChange = { viewModel.setSuperset(item.key, it) },
+                            ) {
+                                Icon(painterResource(R.drawable.ic_link), stringResource(R.string.routine_superset_with_next))
+                            }
                         }
                     }
                 }
@@ -761,7 +764,7 @@ private fun SetTypeSheet(
             val types = SetType.entries
             types.forEachIndexed { index, type ->
                 SegmentedListItem(
-                    selected = type == current,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onType(type) },
                     shapes = selectableSegmentedShapes(index, types.size),
                     leadingContent = { SetBadge(type, number = 1) },
@@ -965,8 +968,9 @@ private sealed interface WeightChoice {
 }
 
 /**
- * Picks a set's weight from one selectable list: No target, Body weight, each common weight, and
- * Custom… last (opens a dialog to type any weight). Total weight moved: two 4 kg dumbbells are 8.
+ * Picks a set's weight from one selectable list: Custom… first (opens a dialog to type any weight;
+ * once set it reads "Custom: 12.5 kg"), then No target, Body weight and each common weight. Total
+ * weight moved: two 4 kg dumbbells are 8.
  * Plate calculator on top works a weight out from a bar and its plates.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -977,8 +981,9 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
     val isCustom = current != null && current != 0.0 && presets.none { sameWeight(it, current) }
     var typing by rememberSaveable { mutableStateOf(false) }
     var calculating by rememberSaveable { mutableStateOf(false) }
+    // Custom… first (with the weight typed, once there is one), then No target, Body weight and the presets.
     val choices: List<WeightChoice> =
-        listOf(WeightChoice.Value(null), WeightChoice.Value(0.0)) + presets.map { WeightChoice.Value(it) } + WeightChoice.Custom
+        listOf(WeightChoice.Custom, WeightChoice.Value(null), WeightChoice.Value(0.0)) + presets.map { WeightChoice.Value(it) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier
@@ -1033,7 +1038,7 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
                     WeightChoice.Custom -> isCustom
                 }
                 SegmentedListItem(
-                    selected = selected,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = {
                         when (choice) {
                             is WeightChoice.Value -> onPick(choice.kg)
@@ -1054,9 +1059,9 @@ internal fun WeightSheet(current: Double?, onPick: (Double?) -> Unit, onDismiss:
                                     0.0 -> stringResource(R.string.weight_bodyweight)
                                     else -> weightValue(choice.kg)
                                 }
-                                // A custom weight already set shows on its row.
+                                // A custom weight already set shows on its row: "Custom: 12.5 kg".
                                 WeightChoice.Custom ->
-                                    if (isCustom) weightValue(current!!) else stringResource(R.string.weight_custom)
+                                    if (isCustom) stringResource(R.string.weight_custom_value, weightValue(current!!)) else stringResource(R.string.weight_custom)
                             },
                         )
                     },
@@ -1125,11 +1130,18 @@ internal fun DurationSheet(
             verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = Dimens.SpaceM))
+            // Custom… first, then the times.
+            SegmentedListItem(
+                verticalAlignment = Alignment.CenterVertically,
+                onClick = { typingCustom = true },
+                shapes = selectableSegmentedShapes(0, all.size + 1),
+                content = { Text(stringResource(R.string.rest_custom)) },
+            )
             all.forEachIndexed { index, seconds ->
                 SegmentedListItem(
-                    selected = seconds == current,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onPick(seconds) },
-                    shapes = selectableSegmentedShapes(index, all.size + 1),
+                    shapes = selectableSegmentedShapes(index + 1, all.size + 1),
                     trailingContent = if (seconds == current) {
                         { Icon(Icons.Filled.Check, contentDescription = null) }
                     } else {
@@ -1138,11 +1150,6 @@ internal fun DurationSheet(
                     content = { Text(label(seconds)) },
                 )
             }
-            SegmentedListItem(
-                onClick = { typingCustom = true },
-                shapes = selectableSegmentedShapes(all.size, all.size + 1),
-                content = { Text(stringResource(R.string.rest_custom)) },
-            )
         }
     }
     if (typingCustom) {

@@ -195,19 +195,30 @@ private const val MAX_PACE_MS = 6_000
 
 /**
  * The camera rep counter: the front camera's picture filling [modifier] under a [wash] of colour,
- * with ML Kit's pose detection (on the phone) following the elbows, knees and hips, and your body
+ * with ML Kit's pose detection (on the phone) following the joint [joint] (from the exercise's
+ * muscles; found from the movement when null) among the elbows, knees and hips, and your body
  * drawn over it as a stick figure, the joint being counted in the app's colour. Each full movement
- * is said aloud and [onRep] gets the reps so far. A new [setKey] starts the count over (the camera
- * stays on).
+ * is said aloud and [onRep] gets the reps so far, while [counting] (a reps set to do). A new
+ * [setKey] starts the count over; the camera itself stays on.
  */
 @AndroidOptIn(ExperimentalGetImage::class)
 @Composable
-internal fun CameraReps(setKey: Any, onRep: (Int) -> Unit, onInView: (Boolean) -> Unit, wash: Color, modifier: Modifier = Modifier) {
+internal fun CameraReps(
+    setKey: Any,
+    joint: Joint?,
+    counting: Boolean,
+    onRep: (Int) -> Unit,
+    onInView: (Boolean) -> Unit,
+    wash: Color,
+    modifier: Modifier = Modifier,
+) {
     val inView by rememberUpdatedState(onInView)
+    // Off a reps set (a rest, a timed set…), the camera stays on but counts and says nothing.
+    val countingNow by rememberUpdatedState(counting)
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val speak = rememberSpeaker()
-    val detector = remember(setKey) { RepDetector() }
+    val detector = remember(setKey, joint) { RepDetector(joint) }
     val current by rememberUpdatedState(detector)
     val rep by rememberUpdatedState { reps: Int ->
         speak(reps.toString())
@@ -248,7 +259,7 @@ internal fun CameraReps(setKey: Any, onRep: (Int) -> Unit, onInView: (Boolean) -
                         // Only a real body counts or is drawn: ML Kit guesses a whole skeleton
                         // from little (a hand up close), so anything less is nobody there.
                         val there = isBody(pose)
-                        val counted = there && reps.onFrame(anglesOf(pose), time)
+                        val counted = there && countingNow && reps.onFrame(anglesOf(pose), time)
                         val total = reps.reps
                         val seen = if (!there) emptyMap() else pose.allPoseLandmarks
                             .filter { it.inFrameLikelihood > SEEN }

@@ -21,8 +21,8 @@ import io.github.dimitrysaf.asko.data.model.DayMark
 
 /** A day's streak icon: fire (worked out), bed (rest day), green slime (sick), plane (travelling). */
 @Composable
-fun DayMarkIcon(mark: DayMark, modifier: Modifier = Modifier, size: Dp = 24.dp, alpha: Float = 1f) {
-    Icon(dayMarkPainter(mark), contentDescription = null, tint = dayMarkColor(mark).copy(alpha = alpha), modifier = modifier.size(size))
+fun DayMarkIcon(mark: DayMark, modifier: Modifier = Modifier, size: Dp = 24.dp, alpha: Float = 1f, tint: Color = dayMarkColor(mark)) {
+    Icon(dayMarkPainter(mark), contentDescription = null, tint = tint.copy(alpha = tint.alpha * alpha), modifier = modifier.size(size))
 }
 
 @Composable

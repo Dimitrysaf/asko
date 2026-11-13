@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.pages.stats
 
+import androidx.compose.ui.Alignment
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,14 +37,14 @@ import io.github.dimitrysaf.asko.lib.di.appViewModel
 import io.github.dimitrysaf.asko.pages.workout.RecordList
 
 /**
- * Stats, from the Routines tab: an area chart of sets, reps and time (each toggled on or off) and
- * one of the weight lifted, each over a range you pick; a year in review with its heat map; the
+ * Stats, from the Routines tab: the last 7 days in four tiles (each opening its own page with its
+ * chart); a year in review with its heat map; the
  * latest personal records; and every
  * exercise you've done, most sets first. Tap an exercise for its own stats.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit) {
+fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit, onOpenTile: (StatsTile) -> Unit) {
     val viewModel = appViewModel { StatsViewModel(it.workoutRepository, it.exerciseRepository, it.bodyWeightRepository, it.noteRepository) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val bodyWeights by viewModel.bodyWeights.collectAsStateWithLifecycle()
@@ -61,8 +63,7 @@ fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit)
                 contentPadding = pageContentPadding(padding),
                 verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
             ) {
-                item(key = "training") { TrainingChart(stats.history) }
-                item(key = "weight") { WeightChart(stats.history) }
+                item(key = "tiles") { MetricTiles(stats.history, onOpenTile) }
                 item(key = "muscles") { MusclesCard(stats.history, viewModel.library) }
                 item(key = "body-weight") { BodyWeightCard(bodyWeights.orEmpty(), viewModel::logBodyWeight) }
                 if (painNotes.isNotEmpty()) {
@@ -103,6 +104,7 @@ fun StatsPage(onBack: () -> Unit, onExerciseClick: (exerciseId: String) -> Unit)
 private fun MostUsedItem(row: ExerciseRow, exercise: Exercise?, index: Int, count: Int, onClick: () -> Unit) {
     val stats = row.stats
     SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
         onClick = onClick,
         shapes = segmentedShapes(index, count),
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),

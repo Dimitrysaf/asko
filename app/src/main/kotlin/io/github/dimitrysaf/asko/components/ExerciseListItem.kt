@@ -46,6 +46,7 @@ fun ExerciseListItem(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
         onClick = onClick,
         shapes = segmentedShapes(index, count),
         modifier = modifier,

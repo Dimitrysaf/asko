@@ -1,5 +1,11 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import io.github.dimitrysaf.asko.lib.format.distanceUnitSymbol
+
+import io.github.dimitrysaf.asko.lib.format.DistanceUnit
+
+import androidx.compose.ui.Alignment
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
@@ -35,6 +41,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -67,6 +75,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.dimitrysaf.asko.R
+import io.github.dimitrysaf.asko.components.HapticSwitch
 import io.github.dimitrysaf.asko.components.PageScaffold
 import io.github.dimitrysaf.asko.components.pageContentPadding
 import io.github.dimitrysaf.asko.components.segmentedShapes
@@ -89,7 +98,7 @@ import java.time.LocalDate
 /**
  * Settings, from the Routines tab's top bar. Workouts: kg or lb, the rest new exercises start
  * with, buzzing or a sound when a rest is over, keeping the screen on. Your data: back up routines and history to a file,
- * or restore them from one. About: the version and where the exercises come from.
+ * or restore them from one. At the bottom, centred: the app, its version and where the exercises come from.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -152,9 +161,12 @@ fun SettingsPage(onBack: () -> Unit) {
         ) {
             item(key = "workouts") {
                 Section(stringResource(R.string.settings_workouts)) {
-                    // kg | lb, right in the row: two choices need no sheet.
-                    ListItem(
-                        modifier = Modifier.clip(segmentedShapes(0, 9).shape),
+                    // kg | lb and km | mi, right in their rows: two choices need no sheet; tapping
+                    // the row switches too.
+                    SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setWeightUnit(WeightUnit.entries.first { it != weightUnit }) },
+                        shapes = segmentedShapes(0, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_weight_unit_hint)) },
                         trailingContent = {
@@ -170,55 +182,79 @@ fun SettingsPage(onBack: () -> Unit) {
                                 }
                             }
                         },
-                        headlineContent = { Text(stringResource(R.string.settings_weight_unit)) },
+                        content = { Text(stringResource(R.string.settings_weight_unit)) },
+                    )
+                    val distanceUnit by settings.distanceUnit.collectAsStateWithLifecycle()
+                    SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setDistanceUnit(DistanceUnit.entries.first { it != distanceUnit }) },
+                        shapes = segmentedShapes(1, 10),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_distance_unit_hint)) },
+                        trailingContent = {
+                            SingleChoiceSegmentedButtonRow {
+                                DistanceUnit.entries.forEachIndexed { index, unit ->
+                                    SegmentedButton(
+                                        selected = unit == distanceUnit,
+                                        onClick = { settings.setDistanceUnit(unit) },
+                                        shape = SegmentedButtonDefaults.itemShape(index, DistanceUnit.entries.size),
+                                        icon = {},
+                                        label = { Text(distanceUnitSymbol(unit)) },
+                                    )
+                                }
+                            }
+                        },
+                        content = { Text(stringResource(R.string.settings_distance_unit)) },
                     )
                     SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
                         onClick = { choosingRest = true },
-                        shapes = segmentedShapes(1, 9),
+                        shapes = segmentedShapes(2, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_default_rest_hint)) },
                         trailingContent = { Text(restLabel(defaultRest), style = MaterialTheme.typography.labelLarge) },
                         content = { Text(stringResource(R.string.settings_default_rest)) },
                     )
                     SegmentedListItem(
-                        checked = buzz,
-                        onCheckedChange = settings::setRestBuzz,
-                        shapes = segmentedShapes(2, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setRestBuzz(!buzz) },
+                        shapes = segmentedShapes(3, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_buzz_hint)) },
-                        trailingContent = { Switch(checked = buzz, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = buzz) },
                         content = { Text(stringResource(R.string.settings_rest_buzz)) },
                     )
                     SegmentedListItem(
-                        checked = sound,
-                        onCheckedChange = settings::setRestSound,
-                        shapes = segmentedShapes(3, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setRestSound(!sound) },
+                        shapes = segmentedShapes(4, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_sound_hint)) },
-                        trailingContent = { Switch(checked = sound, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = sound) },
                         content = { Text(stringResource(R.string.settings_rest_sound)) },
                     )
                     SegmentedListItem(
-                        checked = keepScreenOn,
-                        onCheckedChange = settings::setKeepScreenOn,
-                        shapes = segmentedShapes(4, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setKeepScreenOn(!keepScreenOn) },
+                        shapes = segmentedShapes(5, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_keep_screen_on_hint)) },
-                        trailingContent = { Switch(checked = keepScreenOn, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = keepScreenOn) },
                         content = { Text(stringResource(R.string.settings_keep_screen_on)) },
                     )
                     SegmentedListItem(
-                        checked = editableRows,
-                        onCheckedChange = settings::setEditableWorkoutRows,
-                        shapes = segmentedShapes(5, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setEditableWorkoutRows(!editableRows) },
+                        shapes = segmentedShapes(6, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_editable_rows_hint)) },
-                        trailingContent = { Switch(checked = editableRows, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = editableRows) },
                         content = { Text(stringResource(R.string.settings_editable_rows)) },
                     )
                     SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
                         onClick = { choosingCounter = true },
-                        shapes = segmentedShapes(6, 9),
+                        shapes = segmentedShapes(7, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rep_counter_hint)) },
                         trailingContent = { Text(stringResource(repCounterName(repCounter)), style = MaterialTheme.typography.labelLarge) },
@@ -226,22 +262,22 @@ fun SettingsPage(onBack: () -> Unit) {
                     )
                     val sayReps by settings.sayReps.collectAsStateWithLifecycle()
                     SegmentedListItem(
-                        checked = sayReps,
-                        onCheckedChange = settings::setSayReps,
-                        shapes = segmentedShapes(7, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setSayReps(!sayReps) },
+                        shapes = segmentedShapes(8, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_say_reps_hint)) },
-                        trailingContent = { Switch(checked = sayReps, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = sayReps) },
                         content = { Text(stringResource(R.string.settings_say_reps)) },
                     )
                     val pauseOutOfView by settings.pauseOutOfView.collectAsStateWithLifecycle()
                     SegmentedListItem(
-                        checked = pauseOutOfView,
-                        onCheckedChange = settings::setPauseOutOfView,
-                        shapes = segmentedShapes(8, 9),
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setPauseOutOfView(!pauseOutOfView) },
+                        shapes = segmentedShapes(9, 10),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_pause_out_of_view_hint)) },
-                        trailingContent = { Switch(checked = pauseOutOfView, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = pauseOutOfView) },
                         content = { Text(stringResource(R.string.settings_pause_out_of_view)) },
                     )
                 }
@@ -257,12 +293,12 @@ fun SettingsPage(onBack: () -> Unit) {
                     val showMuscles by settings.showMuscles.collectAsStateWithLifecycle()
                     Spacer(Modifier.height(Dimens.SpaceM))
                     SegmentedListItem(
-                        checked = showMuscles,
-                        onCheckedChange = settings::setShowMuscles,
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setShowMuscles(!showMuscles) },
                         shapes = segmentedShapes(0, 1),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_show_muscles_hint)) },
-                        trailingContent = { Switch(checked = showMuscles, onCheckedChange = null) },
+                        trailingContent = { HapticSwitch(checked = showMuscles) },
                         content = { Text(stringResource(R.string.settings_show_muscles)) },
                     )
                 }
@@ -275,6 +311,7 @@ fun SettingsPage(onBack: () -> Unit) {
             item(key = "data") {
                 Section(stringResource(R.string.settings_data)) {
                     SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
                         onClick = { saveTo.launch("asko-backup-${LocalDate.now()}.json") },
                         enabled = !viewModel.busy,
                         shapes = segmentedShapes(0, 3),
@@ -283,6 +320,7 @@ fun SettingsPage(onBack: () -> Unit) {
                         content = { Text(stringResource(R.string.settings_back_up)) },
                     )
                     SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
                         onClick = { openFrom.launch(arrayOf(BACKUP_TYPE, "*/*")) },
                         enabled = !viewModel.busy,
                         shapes = segmentedShapes(1, 3),
@@ -291,6 +329,7 @@ fun SettingsPage(onBack: () -> Unit) {
                         content = { Text(stringResource(R.string.settings_restore)) },
                     )
                     SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
                         onClick = { importFrom.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) },
                         enabled = !viewModel.busy,
                         shapes = segmentedShapes(2, 3),
@@ -300,21 +339,27 @@ fun SettingsPage(onBack: () -> Unit) {
                     )
                 }
             }
+            // About: a few centred lines at the bottom of the page, no section or list.
             item(key = "about") {
-                Section(stringResource(R.string.settings_about)) {
-                    val version = remember {
-                        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
-                    }
-                    ListItem(
-                        modifier = Modifier.clip(segmentedShapes(0, 2).shape),
-                        colors = itemColors(),
-                        supportingContent = { Text(version) },
-                        headlineContent = { Text(stringResource(R.string.settings_version)) },
+                val version = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull().orEmpty()
+                }
+                Column(
+                    Modifier.fillMaxWidth().padding(top = Dimens.SpaceL),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(Dimens.SpaceXs),
+                ) {
+                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.settings_version_line, version),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    ListItem(
-                        modifier = Modifier.clip(segmentedShapes(1, 2).shape),
-                        colors = itemColors(),
-                        headlineContent = { Text(stringResource(R.string.credit_source)) },
+                    Text(
+                        stringResource(R.string.credit_source),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
             }
@@ -381,6 +426,7 @@ private fun RestDays(settings: SettingsRepository) {
     }
     val current = schedule.current
     SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
         onClick = { picking = true },
         shapes = segmentedShapes(0, 1),
         colors = itemColors(),
@@ -413,8 +459,8 @@ private fun RestDays(settings: SettingsRepository) {
                 week.forEachIndexed { index, day ->
                     val resting = day in current
                     SegmentedListItem(
-                        checked = resting,
-                        onCheckedChange = { settings.setRestDays(if (it) current + day else current - day) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setRestDays(if (resting) current - day else current + day) },
                         shapes = segmentedShapes(index, week.size),
                         trailingContent = { Checkbox(checked = resting, onCheckedChange = null) },
                         content = { Text(day.getDisplayName(TextStyle.FULL, locale)) },
@@ -446,8 +492,8 @@ private fun ExerciseSources(settings: SettingsRepository) {
                 val shown = source !in hidden
                 val lastShown = shown && order.count { it !in hidden } == 1
                 SegmentedListItem(
-                    checked = shown,
-                    onCheckedChange = { settings.setSourceHidden(source, hidden = !it) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    onClick = { settings.setSourceHidden(source, hidden = shown) },
                     enabled = !lastShown,
                     shapes = segmentedShapes(index, order.size),
                     colors = itemColors(),
@@ -457,7 +503,7 @@ private fun ExerciseSources(settings: SettingsRepository) {
                     // Its place in the order: 1 is first.
                     leadingContent = { SetBadge(SetType.NORMAL, index + 1) },
                     supportingContent = { Text(stringResource(sourceDescription(source))) },
-                    trailingContent = { Switch(checked = shown, onCheckedChange = null, enabled = !lastShown) },
+                    trailingContent = { HapticSwitch(checked = shown, enabled = !lastShown) },
                     content = { Text(stringResource(sourceName(source))) },
                 )
             }
@@ -502,8 +548,9 @@ private fun HealthConnectSetting(settings: SettingsRepository, health: HealthCon
     LaunchedEffect(on) { if (on && available) granted = health.hasPermissions() }
     val checked = on && available && granted
     SegmentedListItem(
-        checked = checked,
-        onCheckedChange = { turnOn ->
+        verticalAlignment = Alignment.CenterVertically,
+        onClick = {
+            val turnOn = !checked
             if (!available) {
                 // Greyed-out switch: nothing to turn on here.
             } else if (!turnOn) {
@@ -524,13 +571,14 @@ private fun HealthConnectSetting(settings: SettingsRepository, health: HealthCon
                 ),
             )
         },
-        trailingContent = { Switch(checked = checked, onCheckedChange = null, enabled = available) },
+        trailingContent = { HapticSwitch(checked = checked, enabled = available) },
         content = { Text(stringResource(R.string.settings_health)) },
     )
     // Health Connect itself, to manage what Asko may write and the data there.
     if (available) {
         val context = LocalContext.current
         SegmentedListItem(
+            verticalAlignment = Alignment.CenterVertically,
             // Its main screen: app permissions, and the data each app wrote (an app's own page there
             // is for the system only).
             onClick = { context.startActivity(android.content.Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) },
@@ -563,7 +611,7 @@ private fun RepCounterSheet(current: RepCounterMode, onPick: (RepCounterMode) ->
             modes.forEachIndexed { index, mode ->
                 val selected = mode == current
                 SegmentedListItem(
-                    selected = selected,
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onPick(mode) },
                     shapes = selectableSegmentedShapes(index, modes.size),
                     supportingContent = { Text(stringResource(repCounterDescription(mode))) },

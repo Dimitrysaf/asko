@@ -1,5 +1,8 @@
 package io.github.dimitrysaf.asko.components
 
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.material3.SnackbarHost
+import io.github.dimitrysaf.asko.components.LocalAppSnackbar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -106,6 +109,7 @@ fun SubjectNotes(subject: NoteSubject, id: String, modifier: Modifier = Modifier
             onAdd = { note -> scope.launch { repository.add(subject, id, note) } },
             onEdit = { note -> scope.launch { repository.edit(note) } },
             onDelete = { note -> scope.launch { repository.delete(note.id) } },
+            onRestore = { note -> container.appScope.launch { repository.restore(subject, id, note) } },
             onDismiss = { open = false },
         )
     }
@@ -138,10 +142,12 @@ fun NotesButton(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier, 
             }
         }
     }
-    if (tonal) {
-        FilledTonalIconButton(onClick = onClick, modifier = modifier, content = content)
-    } else {
-        IconButton(onClick = onClick, modifier = modifier, content = content)
+    WithTooltip(description) {
+        if (tonal) {
+            FilledTonalIconButton(onClick = onClick, modifier = modifier, content = content)
+        } else {
+            IconButton(onClick = onClick, modifier = modifier, content = content)
+        }
     }
 }
 
@@ -159,11 +165,14 @@ fun NotesSheet(
     onEdit: (Note) -> Unit,
     onDelete: (Note) -> Unit,
     onDismiss: () -> Unit,
+    onRestore: (Note) -> Unit = onAdd,
 ) {
     var choosingType by rememberSaveable { mutableStateOf(false) }
     var writing by rememberSaveable { mutableStateOf<NoteType?>(null) }
     var editing by remember { mutableStateOf<Note?>(null) }
-    var deleting by remember { mutableStateOf<Note?>(null) }
+    val snackbar = LocalAppSnackbar.current
+    val deletedMessage = stringResource(R.string.note_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(start = Dimens.PageGutter, end = Dimens.PageGutter, bottom = Dimens.SpaceL)) {
@@ -186,6 +195,7 @@ fun NotesSheet(
                 ) {
                     itemsIndexed(notes, key = { _, note -> note.id }) { index, note ->
                         SegmentedListItem(
+                            verticalAlignment = Alignment.CenterVertically,
                             onClick = { editing = note },
                             shapes = segmentedShapes(index, notes.size),
                             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -209,6 +219,8 @@ fun NotesSheet(
                 Spacer(Modifier.width(Dimens.SpaceS))
                 Text(stringResource(R.string.note_add))
             }
+            // The app's snackbar shows here too while the sheet covers the page (Undo after a delete).
+            SnackbarHost(snackbar.state, Modifier.fillMaxWidth())
         }
     }
 
@@ -241,27 +253,12 @@ fun NotesSheet(
                 editing = null
             },
             onDelete = {
+                // Deleted at once; the snackbar at the sheet's foot offers Undo.
                 editing = null
-                deleting = note
+                onDelete(note)
+                snackbar.showUndo(deletedMessage, undoLabel) { onRestore(note) }
             },
             onDismiss = { editing = null },
-        )
-    }
-    deleting?.let { note ->
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text(stringResource(R.string.note_delete_title)) },
-            text = { Text(stringResource(R.string.note_delete_message)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDelete(note)
-                        deleting = null
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) { Text(stringResource(R.string.action_delete)) }
-            },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -285,6 +282,7 @@ private fun NoteTypeSheet(onType: (NoteType) -> Unit, onDismiss: () -> Unit) {
             val types = NoteType.entries
             types.forEachIndexed { index, type ->
                 SegmentedListItem(
+                    verticalAlignment = Alignment.CenterVertically,
                     onClick = { onType(type) },
                     shapes = segmentedShapes(index, types.size),
                     leadingContent = { NoteBadge(type) },
@@ -347,7 +345,7 @@ private fun NoteDialog(
                             onValueChange = { bodyPart = it },
                             label = { Text(stringResource(R.string.note_body_part)) },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Column {
@@ -420,7 +418,7 @@ private fun SuggestingField(value: String, onValueChange: (String) -> Unit, labe
             },
             label = { Text(label) },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
         )
         ExposedDropdownMenu(expanded = showing, onDismissRequest = { expanded = false }) {

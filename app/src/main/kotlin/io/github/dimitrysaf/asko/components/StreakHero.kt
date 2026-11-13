@@ -49,12 +49,19 @@ import java.time.LocalDate
  * streak is alive, the loading skeleton's shimmer sweeps slowly across it, in blue and orange.
  */
 @Composable
-fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier) {
+fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val today = remember { LocalDate.now() }
     val doneToday = streak.counts(today)
     val workedToday = streak.markOf(today) == DayMark.WORKOUT
     val alive = streak.current > 0
-    Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
+    // Tapping it explains the streak (see StreakDialog).
+    Surface(
+        onClick = onClick ?: {},
+        enabled = onClick != null,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = modifier.fillMaxWidth(),
+    ) {
         // While the streak is alive, the skeleton's shimmer sweeps across it, faint, in blue and
         // the fire's orange, slower than when loading.
         Box(
@@ -92,6 +99,33 @@ fun StreakHero(streak: Streak, shape: Shape, modifier: Modifier = Modifier) {
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * The streak item while the streak is worked out: the same shape and size (the flame's circle, the
+ * count and a two-line message), as skeletons, so nothing below it moves when it arrives.
+ */
+@Composable
+fun StreakHeroSkeleton(shape: Shape, modifier: Modifier = Modifier) {
+    Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(horizontal = Dimens.SpaceM, vertical = Dimens.SpaceS),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceM),
+        ) {
+            SkeletonBox(Modifier.size(FlameBox), CircleShape)
+            Column(Modifier.weight(1f)) {
+                // Invisible text in the real styles keeps the real heights; skeletons cover it.
+                Text(" ", style = MaterialTheme.typography.titleMedium, modifier = Modifier.fillMaxWidth(0.4f).skeleton(MaterialTheme.shapes.extraSmall))
+                Text(
+                    " ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    minLines = 2,
+                    modifier = Modifier.padding(top = Dimens.SpaceXs).fillMaxWidth(0.9f).skeleton(MaterialTheme.shapes.extraSmall),
+                )
             }
         }
     }

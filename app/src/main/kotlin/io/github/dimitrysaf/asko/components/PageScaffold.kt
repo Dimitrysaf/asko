@@ -12,8 +12,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -22,7 +26,11 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import io.github.dimitrysaf.asko.R
 
-/** Every page's frame: a large collapsing expressive top bar, optional back button, [actions] and FAB. */
+/**
+ * Every page's frame: a small top bar with the title centred (and [subtitle] under it), the way
+ * Google Health does it, optional back button, [actions] and FAB. The bar takes on a tint once
+ * the page scrolls under it.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PageScaffold(
@@ -33,26 +41,40 @@ fun PageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
-    snackbarHost: @Composable () -> Unit = {},
+    // The app's one snackbar (Undo after a delete), above this page's bottom bar.
+    snackbarHost: @Composable () -> Unit = { SnackbarHost(LocalAppSnackbar.current.state) },
     content: @Composable (PaddingValues) -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val back: @Composable () -> Unit = {
+        if (onBack != null) {
+            WithTooltip(stringResource(R.string.action_back)) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                }
+            }
+        }
+    }
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(title) },
-                subtitle = subtitle?.let { { Text(it) } },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
-                        }
-                    }
-                },
-                actions = actions,
-                scrollBehavior = scrollBehavior,
-            )
+            if (subtitle == null) {
+                CenterAlignedTopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = back,
+                    actions = actions,
+                    scrollBehavior = scrollBehavior,
+                )
+            } else {
+                TopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    subtitle = { Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = back,
+                    actions = actions,
+                    titleHorizontalAlignment = Alignment.CenterHorizontally,
+                    scrollBehavior = scrollBehavior,
+                )
+            }
         },
         floatingActionButton = floatingActionButton,
         bottomBar = bottomBar,

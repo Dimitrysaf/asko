@@ -18,7 +18,7 @@ class ImportFormatsTest {
             2024-01-15 07:30:00,"Push, heavy",1h 5m,Plank,Rest Timer,0,0,0,90,,Felt good,
             2024-01-17 18:00:00,Run,30m,Running,1,0,0,5.2,1800,,,
         """.trimIndent()
-        val parsed = parseImport(csv, WeightUnit.KG, ZoneOffset.UTC)!!
+        val parsed = parseImport(csv, WeightUnit.KG, zone = ZoneOffset.UTC)!!
         assertEquals(ImportSource.STRONG, parsed.source)
         assertEquals(2, parsed.workouts.size)
         val push = parsed.workouts[0]
@@ -37,7 +37,7 @@ class ImportFormatsTest {
     fun strongSemicolonsInPounds() {
         val csv = "Date;Workout Name;Exercise Name;Set Order;Weight;Weight Unit;Reps;RPE;Distance;Distance Unit;Seconds;Notes;Workout Notes;Workout Duration\n" +
             "2020-03-01 10:00:00;Legs;Squat (Barbell);1;225;lbs;5;;;;;;;45m\n"
-        val parsed = parseImport(csv, WeightUnit.KG, ZoneOffset.UTC)!!
+        val parsed = parseImport(csv, WeightUnit.KG, zone = ZoneOffset.UTC)!!
         val set = parsed.workouts.single().exercises.single().sets.single()
         assertEquals(102.06, set.weightKg!!, 0.01)
         assertEquals(2700L, parsed.workouts.single().let { it.endedAt!!.epochSecond - it.startedAt.epochSecond })
@@ -52,7 +52,7 @@ class ImportFormatsTest {
             "Upper","15 Jan 2024, 07:30","15 Jan 2024, 08:25","","Bent Over Row (Barbell)","0","","0","normal","60","8","","",""
             "Upper","15 Jan 2024, 07:30","15 Jan 2024, 08:25","","Plank","","","0","normal","","","","45",""
         """.trimIndent()
-        val parsed = parseImport(csv, WeightUnit.KG, ZoneOffset.UTC)!!
+        val parsed = parseImport(csv, WeightUnit.KG, zone = ZoneOffset.UTC)!!
         assertEquals(ImportSource.HEVY, parsed.source)
         val w = parsed.workouts.single()
         assertEquals(3300L, w.endedAt!!.epochSecond - w.startedAt.epochSecond)
