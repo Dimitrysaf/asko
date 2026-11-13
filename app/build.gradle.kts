@@ -16,8 +16,22 @@ android {
         applicationId = "io.github.dimitrysaf.asko"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        // The release workflow passes these from the tag (v1.2.3: 1.2.3, code 10203).
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 10000
+        versionName = (findProperty("versionName") as String?) ?: "1.0.0"
+    }
+
+    // The release key, from the environment (the release workflow's secrets). Without it the
+    // release APK comes out unsigned.
+    signingConfigs {
+        System.getenv("ASKO_KEYSTORE")?.takeIf { it.isNotBlank() }?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = System.getenv("ASKO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ASKO_KEY_ALIAS")
+                keyPassword = System.getenv("ASKO_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -32,6 +46,7 @@ android {
             ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         }
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

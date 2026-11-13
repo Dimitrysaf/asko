@@ -1,0 +1,77 @@
+# Release: push a version tag (git tag v1.0.0 && git push origin v1.0.0) and this builds the
+# release APK and publishes it as a GitHub Release, the notes being the commits since the last tag.
+#
+# Signing: with these repository secrets the APK is signed with your release key; without them it
+# is built unsigned (and can't be installed) and the run says so.
+#   ASKO_KEYSTORE_BASE64    the keystore file, base64-encoded
+#   ASKO_KEYSTORE_PASSWORD  its password
+#   ASKO_KEY_ALIAS          the key's alias
+#   ASKO_KEY_PASSWORD       the key's password
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the whole history, for the notes since the last tag
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Version from the tag
+        id: version
+        run: |
+          name="${GITHUB_REF_NAME#v}"
+          IFS=. read -r major minor patch <<< "${name%%-*}"
+          code=$(( ${major:-0} * 10000 + ${minor:-0} * 100 + ${patch:-0} ))
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ASKO_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ASKO_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No ASKO_KEYSTORE_BASE64 secret: the release APK will be unsigned."
+          fi
+
+      - name: Build the release APK
+        env:
+          ASKO_KEYSTORE_PASSWORD: ${{ secrets.ASKO_KEYSTORE_PASSWORD }}
+          ASKO_KEY_ALIAS: ${{ secrets.ASKO_KEY_ALIAS }}
+          ASKO_KEY_PASSWORD: ${{ secrets.ASKO_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease -PversionName="${{ steps.version.outputs.name }}" -PversionCode="${{ steps.version.outputs.code }}"
+
+      - name: Name the APK
+        run: |
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$apk" "Asko-${GITHUB_REF_NAME}.apk"
+
+      - name: Notes from the commits since the last tag
+        run: |
+          previous=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          range="${previous:+$previous..}${GITHUB_REF_NAME}"
+          git log --no-merges --format='## %s%n%n%b' "$range" > notes.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Asko ${{ github.ref_name }}
+          body_path: notes.md
+          files: Asko-${{ github.ref_name }}.apk
+          prerelease: ${{ startsWith(steps.version.outputs.name, '0.') }}
