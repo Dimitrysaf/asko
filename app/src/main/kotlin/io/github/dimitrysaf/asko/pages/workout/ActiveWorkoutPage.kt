@@ -256,6 +256,8 @@ fun ActiveWorkoutPage(
     // of view) and resumes when it sees you again, if it was the camera that paused it.
     val pauseOutOfView by settings.pauseOutOfView.collectAsStateWithLifecycle()
     var inView by remember { mutableStateOf(false) }
+    // The camera's picture too dark to see anyone: said over the workout while it watches.
+    var tooDark by remember { mutableStateOf(false) }
     var cameraPaused by remember { mutableStateOf(false) }
     LaunchedEffect(cameraWatching, inView, pauseOutOfView) {
         val watching = cameraWatching && pauseOutOfView
@@ -348,6 +350,7 @@ fun ActiveWorkoutPage(
                 counting = cameraCounting,
                 onRep = ::cameraRep,
                 onInView = { inView = it },
+                onTooDark = { tooDark = it },
                 wash = MaterialTheme.colorScheme.background.copy(alpha = CameraWash),
                 modifier = Modifier.fillMaxSize(),
             )
@@ -463,10 +466,14 @@ fun ActiveWorkoutPage(
             }
         }
         // Paused by the camera: the screen dimmed, and in red what to do.
-        if (cameraPaused && viewModel.paused) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = OutOfViewDim)), contentAlignment = Alignment.Center) {
+        // Paused out of view (dimmed): Get in position, or Too dark when that's why. Too dark is
+        // said even when nothing paused (Pause out of view off).
+        val showTooDark = tooDark && cameraWatching
+        if ((cameraPaused && viewModel.paused) || showTooDark) {
+            val dim = if (cameraPaused && viewModel.paused) Color.Black.copy(alpha = OutOfViewDim) else Color.Transparent
+            Box(Modifier.fillMaxSize().background(dim), contentAlignment = Alignment.Center) {
                 Text(
-                    stringResource(R.string.camera_get_in_position),
+                    stringResource(if (showTooDark) R.string.camera_too_dark else R.string.camera_get_in_position),
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.error,
                 )

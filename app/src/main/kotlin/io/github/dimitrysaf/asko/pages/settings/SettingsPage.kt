@@ -1,5 +1,23 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import io.github.dimitrysaf.asko.components.IconCircle
+import io.github.dimitrysaf.asko.data.settings.UserLibrary
+import io.github.dimitrysaf.asko.components.WithTooltip
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import io.github.dimitrysaf.asko.lib.format.distanceUnitSymbol
 
 import io.github.dimitrysaf.asko.lib.format.DistanceUnit
@@ -96,14 +114,14 @@ import io.github.dimitrysaf.asko.pages.routines.restLabel
 import java.time.LocalDate
 
 /**
- * Settings, from the Routines tab's top bar. Workouts: kg or lb, the rest new exercises start
- * with, buzzing or a sound when a rest is over, keeping the screen on. Your data: back up routines and history to a file,
- * or restore them from one. At the bottom, centred: the app, its version and where the exercises come from.
+ * Settings, from the Routines tab's top bar: Units, Workouts (rest, vibrations, sounds, the rep
+ * counter, workout days…), Libraries (their order, which are shown) and Data (Health Connect,
+ * export and import). At the bottom, centred: the app, its version and where the exercises come from.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsPage(onBack: () -> Unit) {
-    val viewModel = appViewModel { SettingsViewModel(it.settings, it.backupRepository, it.workoutImporter) }
+    val viewModel = appViewModel { SettingsViewModel(it.settings, it.backupRepository, it.workoutImporter, it.exerciseRepository) }
     val settings = viewModel.settings
     val defaultRest by settings.defaultRestSeconds.collectAsStateWithLifecycle()
     val buzz by settings.restBuzz.collectAsStateWithLifecycle()
@@ -119,6 +137,8 @@ fun SettingsPage(onBack: () -> Unit) {
         if (granted) settings.setRepCounter(RepCounterMode.CAMERA)
     }
     var restoreFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    var addingLibrary by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val resolver = LocalContext.current.contentResolver
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -159,16 +179,15 @@ fun SettingsPage(onBack: () -> Unit) {
             modifier = Modifier.consumeWindowInsets(padding),
             contentPadding = pageContentPadding(padding),
         ) {
-            item(key = "workouts") {
-                Section(stringResource(R.string.settings_workouts)) {
+            item(key = "units") {
+                Section(stringResource(R.string.settings_units)) {
                     // kg | lb and km | mi, right in their rows: two choices need no sheet; tapping
                     // the row switches too.
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setWeightUnit(WeightUnit.entries.first { it != weightUnit }) },
-                        shapes = segmentedShapes(0, 10),
+                        shapes = segmentedShapes(0, 2),
                         colors = itemColors(),
-                        supportingContent = { Text(stringResource(R.string.settings_weight_unit_hint)) },
                         trailingContent = {
                             SingleChoiceSegmentedButtonRow {
                                 WeightUnit.entries.forEachIndexed { index, unit ->
@@ -188,9 +207,8 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setDistanceUnit(DistanceUnit.entries.first { it != distanceUnit }) },
-                        shapes = segmentedShapes(1, 10),
+                        shapes = segmentedShapes(1, 2),
                         colors = itemColors(),
-                        supportingContent = { Text(stringResource(R.string.settings_distance_unit_hint)) },
                         trailingContent = {
                             SingleChoiceSegmentedButtonRow {
                                 DistanceUnit.entries.forEachIndexed { index, unit ->
@@ -206,10 +224,14 @@ fun SettingsPage(onBack: () -> Unit) {
                         },
                         content = { Text(stringResource(R.string.settings_distance_unit)) },
                     )
+                }
+            }
+            item(key = "workouts") {
+                Section(stringResource(R.string.settings_workouts)) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { choosingRest = true },
-                        shapes = segmentedShapes(2, 10),
+                        shapes = segmentedShapes(0, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_default_rest_hint)) },
                         trailingContent = { Text(restLabel(defaultRest), style = MaterialTheme.typography.labelLarge) },
@@ -218,7 +240,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setRestBuzz(!buzz) },
-                        shapes = segmentedShapes(3, 10),
+                        shapes = segmentedShapes(1, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_buzz_hint)) },
                         trailingContent = { HapticSwitch(checked = buzz) },
@@ -227,7 +249,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setRestSound(!sound) },
-                        shapes = segmentedShapes(4, 10),
+                        shapes = segmentedShapes(2, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_rest_sound_hint)) },
                         trailingContent = { HapticSwitch(checked = sound) },
@@ -236,7 +258,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setKeepScreenOn(!keepScreenOn) },
-                        shapes = segmentedShapes(5, 10),
+                        shapes = segmentedShapes(3, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_keep_screen_on_hint)) },
                         trailingContent = { HapticSwitch(checked = keepScreenOn) },
@@ -245,7 +267,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setEditableWorkoutRows(!editableRows) },
-                        shapes = segmentedShapes(6, 10),
+                        shapes = segmentedShapes(4, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_editable_rows_hint)) },
                         trailingContent = { HapticSwitch(checked = editableRows) },
@@ -254,9 +276,8 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { choosingCounter = true },
-                        shapes = segmentedShapes(7, 10),
+                        shapes = segmentedShapes(5, WORKOUT_ROWS),
                         colors = itemColors(),
-                        supportingContent = { Text(stringResource(R.string.settings_rep_counter_hint)) },
                         trailingContent = { Text(stringResource(repCounterName(repCounter)), style = MaterialTheme.typography.labelLarge) },
                         content = { Text(stringResource(R.string.settings_rep_counter)) },
                     )
@@ -264,7 +285,7 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setSayReps(!sayReps) },
-                        shapes = segmentedShapes(8, 10),
+                        shapes = segmentedShapes(6, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_say_reps_hint)) },
                         trailingContent = { HapticSwitch(checked = sayReps) },
@@ -274,65 +295,83 @@ fun SettingsPage(onBack: () -> Unit) {
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setPauseOutOfView(!pauseOutOfView) },
-                        shapes = segmentedShapes(9, 10),
+                        shapes = segmentedShapes(7, WORKOUT_ROWS),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_pause_out_of_view_hint)) },
                         trailingContent = { HapticSwitch(checked = pauseOutOfView) },
                         content = { Text(stringResource(R.string.settings_pause_out_of_view)) },
                     )
-                }
-            }
-            item(key = "streaks") {
-                Section(stringResource(R.string.settings_streaks)) {
-                    RestDays(settings)
+                    WorkoutDays(settings, index = 8, count = WORKOUT_ROWS)
                 }
             }
             item(key = "sources") {
                 Section(stringResource(R.string.settings_sources)) {
-                    ExerciseSources(settings)
+                    val removedMessage = stringResource(R.string.library_removed)
+                    val undoLabel = stringResource(R.string.action_undo)
+                    ExerciseSources(
+                        settings = settings,
+                        onAdd = { addingLibrary = true },
+                        // Removed at once; Undo downloads it again.
+                        onRemove = { library ->
+                            viewModel.removeLibrary(library) { undo ->
+                                scope.launch {
+                                    val result = snackbar.showSnackbar(removedMessage.format(library.name), undoLabel, duration = SnackbarDuration.Long)
+                                    if (result == SnackbarResult.ActionPerformed) undo()
+                                }
+                            }
+                        },
+                    )
                     val showMuscles by settings.showMuscles.collectAsStateWithLifecycle()
+                    val hideDuplicates by settings.hideDuplicates.collectAsStateWithLifecycle()
                     Spacer(Modifier.height(Dimens.SpaceM))
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { settings.setShowMuscles(!showMuscles) },
-                        shapes = segmentedShapes(0, 1),
+                        shapes = segmentedShapes(0, 2),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_show_muscles_hint)) },
                         trailingContent = { HapticSwitch(checked = showMuscles) },
                         content = { Text(stringResource(R.string.settings_show_muscles)) },
                     )
-                }
-            }
-            item(key = "health") {
-                Section(stringResource(R.string.settings_health_section)) {
-                    HealthConnectSetting(settings, (context.applicationContext as AskoApplication).container.healthConnect)
+                    SegmentedListItem(
+                        verticalAlignment = Alignment.CenterVertically,
+                        onClick = { settings.setHideDuplicates(!hideDuplicates) },
+                        shapes = segmentedShapes(1, 2),
+                        colors = itemColors(),
+                        supportingContent = { Text(stringResource(R.string.settings_hide_duplicates_hint)) },
+                        trailingContent = { HapticSwitch(checked = hideDuplicates) },
+                        content = { Text(stringResource(R.string.settings_hide_duplicates)) },
+                    )
                 }
             }
             item(key = "data") {
                 Section(stringResource(R.string.settings_data)) {
+                    val health = (context.applicationContext as AskoApplication).container.healthConnect
+                    // Sync with Health Connect, and Manage Health Connect where it's on the phone.
+                    val healthRows = if (health.available) 2 else 1
+                    val dataRows = healthRows + 3
+                    HealthConnectSetting(settings, health, count = dataRows)
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { saveTo.launch("asko-backup-${LocalDate.now()}.json") },
                         enabled = !viewModel.busy,
-                        shapes = segmentedShapes(0, 3),
+                        shapes = segmentedShapes(healthRows, dataRows),
                         colors = itemColors(),
-                        supportingContent = { Text(stringResource(R.string.settings_back_up_hint)) },
                         content = { Text(stringResource(R.string.settings_back_up)) },
                     )
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { openFrom.launch(arrayOf(BACKUP_TYPE, "*/*")) },
                         enabled = !viewModel.busy,
-                        shapes = segmentedShapes(1, 3),
+                        shapes = segmentedShapes(healthRows + 1, dataRows),
                         colors = itemColors(),
-                        supportingContent = { Text(stringResource(R.string.settings_restore_hint)) },
                         content = { Text(stringResource(R.string.settings_restore)) },
                     )
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
                         onClick = { importFrom.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*")) },
                         enabled = !viewModel.busy,
-                        shapes = segmentedShapes(2, 3),
+                        shapes = segmentedShapes(healthRows + 2, dataRows),
                         colors = itemColors(),
                         supportingContent = { Text(stringResource(R.string.settings_import_hint)) },
                         content = { Text(stringResource(R.string.settings_import)) },
@@ -391,6 +430,18 @@ fun SettingsPage(onBack: () -> Unit) {
             onDismiss = { choosingRest = false },
         )
     }
+    if (addingLibrary) {
+        AddLibraryDialog(
+            busy = viewModel.addingLibrary,
+            failed = viewModel.libraryFailed,
+            onEdit = viewModel::libraryErrorShown,
+            onAdd = { name, url -> viewModel.addLibrary(name, url) { addingLibrary = false } },
+            onDismiss = {
+                addingLibrary = false
+                viewModel.libraryErrorShown()
+            },
+        )
+    }
     restoreFrom?.let { uri ->
         AlertDialog(
             onDismissRequest = { restoreFrom = null },
@@ -411,12 +462,12 @@ fun SettingsPage(onBack: () -> Unit) {
 }
 
 /**
- * Rest days: which weekdays you rest (they count towards the streak). Tap for a sheet to pick
- * them; changes apply from today on, so streaks already made stay as they were.
+ * Workout days: the weekdays you train, ticked in a sheet. The days left unticked are your rest
+ * days (they count towards the streak); changes apply from today on, so past streaks stay.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun RestDays(settings: SettingsRepository) {
+private fun WorkoutDays(settings: SettingsRepository, index: Int, count: Int) {
     val schedule by settings.restSchedule.collectAsStateWithLifecycle()
     var picking by rememberSaveable { mutableStateOf(false) }
     val locale = LocalConfiguration.current.locales[0]
@@ -424,26 +475,15 @@ private fun RestDays(settings: SettingsRepository) {
         val first = WeekFields.of(locale).firstDayOfWeek
         List(7) { first.plus(it.toLong()) }
     }
-    val current = schedule.current
+    // Stored as rest days; shown the other way round.
+    val rest = schedule.current
     SegmentedListItem(
         verticalAlignment = Alignment.CenterVertically,
         onClick = { picking = true },
-        shapes = segmentedShapes(0, 1),
+        shapes = segmentedShapes(index, count),
         colors = itemColors(),
-        leadingContent = { DayMarkIcon(DayMark.REST, size = 24.dp) },
-        supportingContent = {
-            Text(
-                week.filter { it in current }.joinToString { it.getDisplayName(TextStyle.SHORT, locale) }
-                    .ifEmpty { stringResource(R.string.settings_rest_days_none) },
-            )
-        },
-        content = { Text(stringResource(R.string.settings_rest_days)) },
-    )
-    Text(
-        stringResource(R.string.settings_rest_days_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = Dimens.SpaceM, end = Dimens.SpaceM, top = Dimens.SpaceS),
+        supportingContent = { Text(stringResource(R.string.settings_workout_days_hint)) },
+        content = { Text(stringResource(R.string.settings_workout_days)) },
     )
     if (picking) {
         ModalBottomSheet(onDismissRequest = { picking = false }) {
@@ -452,17 +492,17 @@ private fun RestDays(settings: SettingsRepository) {
                 verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
             ) {
                 Text(
-                    stringResource(R.string.settings_rest_days),
+                    stringResource(R.string.settings_workout_days),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(bottom = Dimens.SpaceM),
                 )
-                week.forEachIndexed { index, day ->
-                    val resting = day in current
+                week.forEachIndexed { i, day ->
+                    val working = day !in rest
                     SegmentedListItem(
                         verticalAlignment = Alignment.CenterVertically,
-                        onClick = { settings.setRestDays(if (resting) current - day else current + day) },
-                        shapes = segmentedShapes(index, week.size),
-                        trailingContent = { Checkbox(checked = resting, onCheckedChange = null) },
+                        onClick = { settings.setRestDays(if (working) rest + day else rest - day) },
+                        shapes = segmentedShapes(i, week.size),
+                        trailingContent = { Checkbox(checked = working, onCheckedChange = null) },
                         content = { Text(day.getDisplayName(TextStyle.FULL, locale)) },
                     )
                 }
@@ -471,40 +511,71 @@ private fun RestDays(settings: SettingsRepository) {
     }
 }
 
+/** How many rows the Workouts section has. */
+private const val WORKOUT_ROWS = 9
+
 /**
  * The exercise libraries in their order (hold and drag one to move it), each with a switch to
- * show or hide it; the last one shown can't be hidden.
+ * show or hide it (the last one shown can't be hidden); ones you added also have Remove. Add a
+ * library comes first.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ExerciseSources(settings: SettingsRepository) {
+private fun ExerciseSources(settings: SettingsRepository, onAdd: () -> Unit, onRemove: (UserLibrary) -> Unit) {
     val order by settings.sourceOrder.collectAsStateWithLifecycle()
     val hidden by settings.hiddenSources.collectAsStateWithLifecycle()
+    val added by settings.userLibraries.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
+    // The Add row, then the libraries: one segmented list.
+    val rows = order.size + 1
+    SegmentedListItem(
+        verticalAlignment = Alignment.CenterVertically,
+        onClick = onAdd,
+        shapes = segmentedShapes(0, rows),
+        colors = itemColors(),
+        // The + in a circle the size of the libraries' numbers, so the row lines up with theirs.
+        leadingContent = { IconCircle(rememberVectorPainter(Icons.Filled.Add), size = 40.dp) },
+        content = { Text(stringResource(R.string.settings_add_library)) },
+    )
+    // (The section already spaces its rows at the segmented gap.)
     ReorderableColumn(
         list = order,
         onSettle = { from, to -> settings.setSourceOrder(order.toMutableList().apply { add(to, removeAt(from)) }) },
         onMove = { haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick) },
         verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap),
-    ) { index, source, _ ->
-        key(source) {
+    ) { index, source, dragging ->
+        key(source.name) {
+            // The library being dragged shows selected (no other way to show it's held).
             ReorderableItem {
                 val shown = source !in hidden
                 val lastShown = shown && order.count { it !in hidden } == 1
+                val mine = added.firstOrNull { it.source == source }
                 SegmentedListItem(
                     verticalAlignment = Alignment.CenterVertically,
+                    selected = dragging,
                     onClick = { settings.setSourceHidden(source, hidden = shown) },
                     enabled = !lastShown,
-                    shapes = segmentedShapes(index, order.size),
+                    shapes = selectableSegmentedShapes(index + 1, rows),
                     colors = itemColors(),
                     modifier = Modifier.longPressDraggableHandle(
                         onDragStarted = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                     ),
                     // Its place in the order: 1 is first.
                     leadingContent = { SetBadge(SetType.NORMAL, index + 1) },
-                    supportingContent = { Text(stringResource(sourceDescription(source))) },
-                    trailingContent = { HapticSwitch(checked = shown, enabled = !lastShown) },
-                    content = { Text(stringResource(sourceName(source))) },
+                    supportingContent = { Text(mine?.let { linkHost(it.url) } ?: stringResource(sourceDescription(source))) },
+                    trailingContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (mine != null) {
+                                WithTooltip(stringResource(R.string.settings_remove_library)) {
+                                    IconButton(onClick = { onRemove(mine) }) {
+                                        Icon(Icons.Filled.Delete, stringResource(R.string.settings_remove_library))
+                                    }
+                                }
+                            }
+                            HapticSwitch(checked = shown, enabled = !lastShown)
+                        }
+                    },
+                    content = { Text(mine?.name ?: stringResource(sourceName(source))) },
                 )
             }
         }
@@ -517,16 +588,82 @@ private fun ExerciseSources(settings: SettingsRepository) {
     )
 }
 
+/** Where a library you added comes from, for its row: the link's site ("github.com"). */
+private fun linkHost(url: String): String = runCatching { java.net.URI(url).host }.getOrNull() ?: url
+
 private fun sourceName(source: ExerciseSource) = when (source) {
     ExerciseSource.EXERCISEDB -> R.string.source_exercisedb
     ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db
-    ExerciseSource.CUSTOM -> R.string.source_custom
+    ExerciseSource.WGER -> R.string.source_wger
+    else -> R.string.source_custom
 }
 
 private fun sourceDescription(source: ExerciseSource) = when (source) {
     ExerciseSource.EXERCISEDB -> R.string.source_exercisedb_desc
     ExerciseSource.FREE_EXERCISE_DB -> R.string.source_free_exercise_db_desc
-    ExerciseSource.CUSTOM -> R.string.source_custom_desc
+    ExerciseSource.WGER -> R.string.source_wger_desc
+    else -> R.string.source_custom_desc
+}
+
+/**
+ * Add a library: its name and the link to its JSON or CSV file (see LinkedLibraryApi). Add
+ * downloads it first ([busy] meanwhile); a link that can't be read says so ([failed]) and the
+ * dialog stays.
+ */
+@Composable
+private fun AddLibraryDialog(
+    busy: Boolean,
+    failed: Boolean,
+    onEdit: () -> Unit,
+    onAdd: (name: String, url: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var url by rememberSaveable { mutableStateOf("") }
+    val ready = name.isNotBlank() && url.trim().let { it.startsWith("https://") || it.startsWith("http://") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_add_library)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.SpaceM)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        onEdit()
+                    },
+                    label = { Text(stringResource(R.string.add_library_name)) },
+                    singleLine = true,
+                    enabled = !busy,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = {
+                        url = it
+                        onEdit()
+                    },
+                    label = { Text(stringResource(R.string.add_library_link)) },
+                    singleLine = true,
+                    enabled = !busy,
+                    isError = failed,
+                    supportingText = if (failed) {
+                        { Text(stringResource(R.string.add_library_failed)) }
+                    } else {
+                        null
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (busy) LinearWavyProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAdd(name, url) }, enabled = ready && !busy) { Text(stringResource(R.string.add_library_add)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }
 
 /**
@@ -536,7 +673,7 @@ private fun sourceDescription(source: ExerciseSource) = when (source) {
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun HealthConnectSetting(settings: SettingsRepository, health: HealthConnectSync) {
+private fun HealthConnectSetting(settings: SettingsRepository, health: HealthConnectSync, count: Int) {
     val on by settings.healthConnect.collectAsStateWithLifecycle()
     val available = remember { health.available }
     val scope = rememberCoroutineScope()
@@ -559,17 +696,11 @@ private fun HealthConnectSetting(settings: SettingsRepository, health: HealthCon
                 scope.launch { if (health.hasPermissions()) settings.setHealthConnect(true) else ask.launch(HealthConnectSync.PERMISSIONS) }
             }
         },
-        shapes = segmentedShapes(0, if (available) 2 else 1),
+        shapes = segmentedShapes(0, count),
         colors = itemColors(),
-        supportingContent = {
-            Text(
-                stringResource(
-                    when {
-                        !available -> R.string.settings_health_missing
-                        else -> R.string.settings_health_hint
-                    },
-                ),
-            )
+        // Only says something when Health Connect isn't on the phone.
+        supportingContent = if (available) null else {
+            { Text(stringResource(R.string.settings_health_missing)) }
         },
         trailingContent = { HapticSwitch(checked = checked, enabled = available) },
         content = { Text(stringResource(R.string.settings_health)) },
@@ -582,9 +713,8 @@ private fun HealthConnectSetting(settings: SettingsRepository, health: HealthCon
             // Its main screen: app permissions, and the data each app wrote (an app's own page there
             // is for the system only).
             onClick = { context.startActivity(android.content.Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) },
-            shapes = segmentedShapes(1, 2),
+            shapes = segmentedShapes(1, count),
             colors = itemColors(),
-            supportingContent = { Text(stringResource(R.string.settings_health_manage_hint)) },
             content = { Text(stringResource(R.string.settings_health_manage)) },
         )
     }
@@ -614,7 +744,7 @@ private fun RepCounterSheet(current: RepCounterMode, onPick: (RepCounterMode) ->
                     verticalAlignment = Alignment.CenterVertically,
                     onClick = { onPick(mode) },
                     shapes = selectableSegmentedShapes(index, modes.size),
-                    supportingContent = { Text(stringResource(repCounterDescription(mode))) },
+                    supportingContent = repCounterDescription(mode)?.let { { Text(stringResource(it)) } },
                     trailingContent = if (selected) {
                         { Icon(Icons.Filled.Check, contentDescription = null) }
                     } else {
@@ -633,8 +763,8 @@ private fun repCounterName(mode: RepCounterMode) = when (mode) {
     RepCounterMode.CAMERA -> R.string.rep_counter_camera
 }
 
-private fun repCounterDescription(mode: RepCounterMode) = when (mode) {
-    RepCounterMode.OFF -> R.string.rep_counter_off_desc
+private fun repCounterDescription(mode: RepCounterMode): Int? = when (mode) {
+    RepCounterMode.OFF -> null
     RepCounterMode.METRONOME -> R.string.rep_counter_metronome_desc
     RepCounterMode.CAMERA -> R.string.rep_counter_camera_desc
 }

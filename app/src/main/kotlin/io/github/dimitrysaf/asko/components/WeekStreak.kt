@@ -1,10 +1,5 @@
 package io.github.dimitrysaf.asko.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import io.github.dimitrysaf.asko.data.model.DayMark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +17,8 @@ import java.time.LocalDate
 import java.time.format.TextStyle
 
 /**
- * The current week: the days' letters (today's circled), then a tall capsule per day, like a
- * row of the month calendar ([DayRow]).
+ * The current week with day letters, drawn exactly like a row of the month calendar ([DayRow]):
+ * the same capsules, today's number circled.
  * [workoutDays] null means still loading.
  */
 @Composable
@@ -42,18 +37,11 @@ fun WeekStreak(
         Row(Modifier.fillMaxWidth()) {
             week.forEach { day ->
                 Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    // Today's letter in a filled circle, as Google Health marks it.
-                    val isToday = day == today
-                    Box(
-                        Modifier.size(LetterSize).background(if (isToday) MaterialTheme.colorScheme.onSurface else Color.Transparent, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, locale),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isToday) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    Text(
+                        text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, locale),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -65,10 +53,6 @@ fun WeekStreak(
             onDayLongClick = onDayLongClick,
             marks = marks,
             counts = counts,
-            height = TallDayCapsuleHeight,
-            circleToday = false,
         )
     }
 }
-
-private val LetterSize = 24.dp

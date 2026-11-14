@@ -23,7 +23,7 @@ ktor = "3.4.1"
 vico = "3.3.1" # charts (Material 3 themed)
 health-connect = "1.1.0"
 camerax = "1.4.2" # the camera rep counter
-mlkit-pose = "18.0.0-beta5" # on-device pose detection for the camera rep counter # writes finished workouts and body weight to Health Connect
+mediapipe = "1.2.0" # on-device body and hand tracking for the camera rep counter
 
 [libraries]
 # AndroidX core
@@ -66,7 +66,7 @@ ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "kto
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
-mlkit-pose-detection = { module = "com.google.mlkit:pose-detection", version.ref = "mlkit-pose" }
+mediapipe-tasks-vision = { module = "com.google.mediapipe:tasks-vision", version.ref = "mediapipe" }
 
 # Health Connect
 androidx-health-connect = { module = "androidx.health.connect:connect-client", version.ref = "health-connect" }

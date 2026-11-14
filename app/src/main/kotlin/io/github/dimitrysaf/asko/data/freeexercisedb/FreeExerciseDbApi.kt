@@ -26,13 +26,21 @@ object FreeExerciseDbApi {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Every exercise, sorted by name. Throws [IOException] when it can't be reached. */
-    suspend fun fetchExercises(): List<Exercise> = withContext(Dispatchers.IO) {
-        val connection = URL(EXERCISES_URL).openConnection() as HttpURLConnection
+    suspend fun fetchExercises(): List<Exercise> = fetchExercises(EXERCISES_URL, IMAGES_URL, ID_PREFIX, ExerciseSource.FREE_EXERCISE_DB)
+
+    /**
+     * A library in free-exercise-db's format at [url] (a copy of it, or one made the same way):
+     * its exercises as [source], ids prefixed with [idPrefix], photo paths read against
+     * [imagesBase] unless they're full links already. Throws [IOException] when it can't be
+     * reached or isn't in that format.
+     */
+    suspend fun fetchExercises(url: String, imagesBase: String, idPrefix: String, source: ExerciseSource): List<Exercise> = withContext(Dispatchers.IO) {
+        val connection = URL(url).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
         val text = try {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("free-exercise-db answered ${connection.responseCode}")
+                throw IOException("$url answered ${connection.responseCode}")
             }
             connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
@@ -41,13 +49,23 @@ object FreeExerciseDbApi {
         val list = try {
             json.decodeFromString<List<FreeExercise>>(text)
         } catch (e: SerializationException) {
-            throw IOException("free-exercise-db sent something unexpected", e)
+            throw IOException("$url isn't a list of exercises in free-exercise-db's format", e)
         }
-        list.map { it.toExercise() }.sortedBy { it.name.lowercase() }
+        if (list.isEmpty()) throw IOException("$url has no exercises")
+        list.map { it.toExercise(imagesBase, idPrefix, source) }.sortedBy { it.name.lowercase() }
     }
 
-    private fun FreeExercise.toExercise() = Exercise(
-        id = ID_PREFIX + id,
+    /**
+     * Where a library's relative photo paths start, for its JSON at [url]: free-exercise-db keeps
+     * its list in dist/ and its photos in exercises/; otherwise, next to the JSON file.
+     */
+    fun imagesBaseFor(url: String): String {
+        val folder = url.substringBeforeLast('/') + "/"
+        return if (folder.endsWith("/dist/")) folder.removeSuffix("dist/") + "exercises/" else folder
+    }
+
+    private fun FreeExercise.toExercise(imagesBase: String, idPrefix: String, source: ExerciseSource) = Exercise(
+        id = idPrefix + id,
         name = name.trim(),
         category = if (category == "cardio") "Cardio" else bodyPart(primaryMuscles.firstOrNull()),
         primaryMuscles = primaryMuscles.map(::muscle),
@@ -55,8 +73,8 @@ object FreeExerciseDbApi {
         equipment = listOfNotNull(equipment?.let(::equipmentName)),
         animationUrl = "",
         instructions = instructions.map { it.trim() }.filter { it.isNotEmpty() },
-        source = ExerciseSource.FREE_EXERCISE_DB,
-        photos = images.map { IMAGES_URL + it },
+        source = source,
+        photos = images.map { if (it.startsWith("http://") || it.startsWith("https://")) it else imagesBase + it },
     )
 }
 
@@ -64,7 +82,7 @@ object FreeExerciseDbApi {
 // exercises" work across both libraries.
 
 /** The muscle group (ExerciseDB's body part) a muscle belongs to. */
-private fun bodyPart(muscle: String?): String = when (muscle) {
+internal fun bodyPart(muscle: String?): String = when (muscle) {
     "abdominals" -> "Waist"
     "abductors", "adductors", "glutes", "hamstrings", "quadriceps" -> "Upper Legs"
     "biceps", "triceps" -> "Upper Arms"
@@ -77,7 +95,7 @@ private fun bodyPart(muscle: String?): String = when (muscle) {
     else -> ""
 }
 
-private fun muscle(name: String): String = when (name) {
+internal fun muscle(name: String): String = when (name) {
     "chest" -> "Pectorals"
     "lats" -> "Latissimus Dorsi"
     "lower back" -> "Erector Spinae"
@@ -87,7 +105,7 @@ private fun muscle(name: String): String = when (name) {
     else -> name.split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
 }
 
-private fun equipmentName(name: String): String = when (name) {
+internal fun equipmentName(name: String): String = when (name) {
     "body only" -> "Bodyweight"
     "machine" -> "Leverage Machine"
     "kettlebells" -> "Kettlebell"

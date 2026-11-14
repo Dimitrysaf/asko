@@ -75,8 +75,8 @@ fun OwnMediaStill(media: ExerciseMedia, shape: Shape, modifier: Modifier = Modif
     )
 }
 
-/** An exercise of yours without media is drawn from its muscles. */
-val Exercise.isDrawn: Boolean get() = source == ExerciseSource.CUSTOM && animationUrl.isEmpty() && photos.isEmpty()
+/** An exercise with no pictures (one of yours, or a wger one without photos) is drawn from its muscles. */
+val Exercise.isDrawn: Boolean get() = animationUrl.isEmpty() && photos.isEmpty()
 
 /**
  * An exercise of yours, drawn: the body with its main muscles in the primary colour and the others

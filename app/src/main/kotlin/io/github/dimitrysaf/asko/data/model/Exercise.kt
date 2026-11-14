@@ -33,15 +33,39 @@ data class Exercise(
     val stillUrl: String get() = animationUrl.ifEmpty { photos.firstOrNull().orEmpty() }
 }
 
-/** Where exercises come from. Their order and which are shown are set in Settings. */
+/**
+ * Where exercises come from: a built-in library, your own exercises, or a library you added from
+ * a link ([link]). Their order and which are shown are set in Settings. Saved as its [name]
+ * ("EXERCISEDB", "LINK:3f2a…"), so libraries saved before this was open-ended still read.
+ */
 @Serializable
-enum class ExerciseSource {
-    /** ExerciseDB: animated demos. */
-    EXERCISEDB,
+@JvmInline
+value class ExerciseSource(val name: String) {
+    /** A library you added from a link, rather than one Asko comes with. */
+    val isLink: Boolean get() = name.startsWith(LINK_PREFIX)
 
-    /** free-exercise-db: two photos each, start and end position. */
-    FREE_EXERCISE_DB,
+    /** For a library you added: its id among your links. */
+    val linkId: String? get() = if (isLink) name.removePrefix(LINK_PREFIX) else null
 
-    /** Exercises you made, drawn from the muscles they work. */
-    CUSTOM,
+    companion object {
+        /** ExerciseDB: animated demos. */
+        val EXERCISEDB = ExerciseSource("EXERCISEDB")
+
+        /** free-exercise-db: two photos each, start and end position. */
+        val FREE_EXERCISE_DB = ExerciseSource("FREE_EXERCISE_DB")
+
+        /** wger's community library: photos for some, and how-tos. Off until you switch it on. */
+        val WGER = ExerciseSource("WGER")
+
+        /** Exercises you made, drawn from the muscles they work. */
+        val CUSTOM = ExerciseSource("CUSTOM")
+
+        /** The libraries Asko comes with (yours included). */
+        val BUILT_IN = listOf(CUSTOM, EXERCISEDB, FREE_EXERCISE_DB, WGER)
+
+        private const val LINK_PREFIX = "LINK:"
+
+        /** The library you added from a link, by its id. */
+        fun link(id: String) = ExerciseSource(LINK_PREFIX + id)
+    }
 }

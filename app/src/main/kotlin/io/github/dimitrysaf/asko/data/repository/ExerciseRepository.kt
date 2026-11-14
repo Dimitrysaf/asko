@@ -10,6 +10,9 @@ import io.github.dimitrysaf.asko.data.model.Workout
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onStart
 import io.github.dimitrysaf.asko.data.settings.SettingsRepository
+import io.github.dimitrysaf.asko.data.settings.UserLibrary
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.withLock
@@ -31,7 +34,10 @@ import java.io.IOException
  * each exercise once.
  */
 class ExerciseRepository(
+    /** The libraries Asko comes with, each saved on the device. */
     private val catalogs: Map<ExerciseSource, ExerciseCatalog>,
+    /** A library you added: where it's saved and how it's read (made once per library). */
+    private val linkCatalog: (UserLibrary) -> ExerciseCatalog,
     private val settings: SettingsRepository,
     /** Your exercises (the CUSTOM library); null until read. */
     private val custom: StateFlow<List<Exercise>?>,
@@ -48,8 +54,9 @@ class ExerciseRepository(
     /** What's browsed and searched, following the order and hiding set in Settings. */
     @OptIn(ExperimentalCoroutinesApi::class)
     val browsable: Flow<List<Exercise>> =
-        combine(settings.sourceOrder, settings.hiddenSources, custom) { order, hidden, _ -> order.filterNot { it in hidden } }
-            .mapLatest { shown -> library().let { withContext(Dispatchers.Default) { it.merged(shown) } } }
+        combine(settings.sourceOrder, settings.hiddenSources, settings.hideDuplicates, custom) { order, hidden, once, _ ->
+            order.filterNot { it in hidden } to once
+        }.mapLatest { (shown, once) -> library().let { withContext(Dispatchers.Default) { it.merged(shown, once) } } }
 
     /**
      * Every exercise's id (from any library) → the exercise to show for it: the same exercise
@@ -71,7 +78,7 @@ class ExerciseRepository(
 
     /** [browsable] as already worked out (instantly, for a page's first frame); null when it isn't yet. */
     fun browsableNow(): List<Exercise>? =
-        cached?.mergedIfReady(settings.sourceOrder.value.filterNot { it in settings.hiddenSources.value })
+        cached?.mergedIfReady(settings.sourceOrder.value.filterNot { it in settings.hiddenSources.value }, settings.hideDuplicates.value)
 
     /** The exercise to show for [id] (see [lookup]). */
     suspend fun byId(id: String): Exercise? = lookup()[id]
@@ -90,7 +97,7 @@ class ExerciseRepository(
     suspend fun similarTo(exercise: Exercise, limit: Int = SIMILAR_LIMIT): List<Exercise> {
         val shown = settings.sourceOrder.value.filterNot { it in settings.hiddenSources.value }
         val library = library()
-        return withContext(Dispatchers.Default) { library.merged(shown).similarTo(exercise, limit) }
+        return withContext(Dispatchers.Default) { library.merged(shown, settings.hideDuplicates.value).similarTo(exercise, limit) }
     }
 
     private val mutex = Mutex()
@@ -109,9 +116,41 @@ class ExerciseRepository(
         }
     }
 
+    private val linkCatalogs = ConcurrentHashMap<String, ExerciseCatalog>()
+
+    private fun catalogOf(library: UserLibrary): ExerciseCatalog = linkCatalogs.getOrPut(library.id) { linkCatalog(library) }
+
+    /**
+     * Adds a library from a link to its JSON or CSV file (see LinkedLibraryApi), called [name]:
+     * downloads it first, so a link that doesn't work isn't added. Throws [IOException] then.
+     */
+    suspend fun addLibrary(name: String, url: String) {
+        val library = UserLibrary(UUID.randomUUID().toString().take(8), name.trim(), url.trim())
+        val catalog = catalogOf(library)
+        try {
+            catalog.load()
+        } catch (e: IOException) {
+            linkCatalogs.remove(library.id)
+            catalog.delete()
+            throw e
+        }
+        settings.addUserLibrary(library)
+    }
+
+    /** Removes a library you added, and its downloaded copy. */
+    suspend fun removeLibrary(library: UserLibrary) {
+        settings.removeUserLibrary(library)
+        linkCatalogs.remove(library.id)?.delete() ?: linkCatalog(library).delete()
+    }
+
     /** Each library that could be read; throws the first failure when none could. */
     private suspend fun loadEach(): Map<ExerciseSource, List<Exercise>> = coroutineScope {
-        val results = catalogs.mapValues { (_, catalog) -> async { runCatching { catalog.load() } } }
+        val hidden = settings.hiddenSources.value
+        // A hidden library never downloaded (wger, off until you switch it on) isn't fetched
+        // just to be hidden: nothing of it can be in your routines yet.
+        val every = (catalogs + settings.userLibraries.value.associate { it.source to catalogOf(it) })
+            .filter { (source, catalog) -> source !in hidden || catalog.isSaved }
+        val results = every.mapValues { (_, catalog) -> async { runCatching { catalog.load() } } }
             .mapValues { it.value.await() }
         // Your exercises are always there (once read); they don't make a library-less phone work.
         val loaded = results.filterValues { it.isSuccess }.mapValues { it.value.getOrThrow() } +
@@ -145,10 +184,10 @@ private class Library(private val libraries: Map<ExerciseSource, List<Exercise>>
         return (byKey[key].orEmpty().map { it.id } + id).distinct()
     }
 
-    private val mergedCache = HashMap<List<ExerciseSource>, List<Exercise>>()
+    private val mergedCache = HashMap<Pair<List<ExerciseSource>, Boolean>, List<Exercise>>()
 
     @Synchronized
-    fun mergedIfReady(shown: List<ExerciseSource>): List<Exercise>? = mergedCache[shown]
+    fun mergedIfReady(shown: List<ExerciseSource>, hideDuplicates: Boolean): List<Exercise>? = mergedCache[shown to hideDuplicates]
 
     @Synchronized
     fun resolvedIfReady(order: List<ExerciseSource>, hidden: Set<ExerciseSource>): Map<String, Exercise>? = resolvedCache[order to hidden]
@@ -156,14 +195,15 @@ private class Library(private val libraries: Map<ExerciseSource, List<Exercise>>
     private val resolvedCache = HashMap<Pair<List<ExerciseSource>, Set<ExerciseSource>>, Map<String, Exercise>>()
 
     /**
-     * The [shown] libraries' exercises in one list, by name: an exercise in more than one comes
-     * from the first of them.
+     * The [shown] libraries' exercises in one list, by name. With [hideDuplicates], an exercise
+     * in more than one comes once, from the first of them; without, each library's copy is there.
      */
     @Synchronized
-    fun merged(shown: List<ExerciseSource>): List<Exercise> = mergedCache.getOrPut(shown) {
+    fun merged(shown: List<ExerciseSource>, hideDuplicates: Boolean): List<Exercise> = mergedCache.getOrPut(shown to hideDuplicates) {
         val rank = shown.withIndex().associate { (i, source) -> source to i }
-        all.filter { it.source in rank && !it.retired }
-            .groupBy { keyOf.getValue(it.id) }
+        val visible = all.filter { it.source in rank && !it.retired }
+        if (!hideDuplicates) return@getOrPut visible
+        visible.groupBy { keyOf.getValue(it.id) }
             .values.map { same -> same.minBy { rank.getValue(it.source) } }
             .sortedBy { it.name.lowercase() }
     }

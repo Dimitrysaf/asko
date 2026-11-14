@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.lib.di
 
+import io.github.dimitrysaf.asko.data.linked.LinkedLibraryApi
+import io.github.dimitrysaf.asko.data.wger.WgerApi
 import io.github.dimitrysaf.asko.data.importing.WorkoutImporter
 import io.github.dimitrysaf.asko.lib.health.HealthConnectSync
 
@@ -42,7 +44,7 @@ class AppContainer(context: Context) {
     val customExerciseRepository = CustomExerciseRepository(database.customExerciseDao(), appScope)
     val mediaRepository = MediaRepository(context, database.exerciseMediaDao(), appScope)
 
-    /** ExerciseDB and free-exercise-db, each saved on the device; merged as Settings says. */
+    /** ExerciseDB, free-exercise-db, wger and the libraries you add, each saved on the device; merged as Settings says. */
     val exerciseRepository = ExerciseRepository(
         mapOf(
             ExerciseSource.EXERCISEDB to ExerciseCatalog(
@@ -53,7 +55,22 @@ class AppContainer(context: Context) {
                 File(context.filesDir, "free-exercise-db.json"),
                 expectedTotal = 1,
             ) { _ -> FreeExerciseDbApi.fetchExercises() },
+            ExerciseSource.WGER to ExerciseCatalog(
+                File(context.filesDir, "wger.json"),
+                expectedTotal = WgerApi.EXPECTED_TOTAL,
+            ) { onProgress -> WgerApi.fetchExercises(onProgress) },
         ),
+        // A library you added: read from its link, whichever format it's in.
+        { library ->
+            ExerciseCatalog(File(context.filesDir, "library-${library.id}.json"), expectedTotal = 1) { _ ->
+                LinkedLibraryApi.fetchExercises(
+                    url = library.url,
+                    imagesBase = FreeExerciseDbApi.imagesBaseFor(library.url),
+                    idPrefix = "link-${library.id}:",
+                    source = library.source,
+                )
+            }
+        },
         settings,
         customExerciseRepository.exercises,
     )

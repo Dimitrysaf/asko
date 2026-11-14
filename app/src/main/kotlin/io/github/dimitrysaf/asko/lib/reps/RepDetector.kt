@@ -2,8 +2,11 @@ package io.github.dimitrysaf.asko.lib.reps
 
 import io.github.dimitrysaf.asko.data.model.Muscle
 
-/** The joints the camera counter follows; their angles bend and straighten with each rep. */
-enum class Joint { ELBOW, KNEE, HIP }
+/**
+ * The joints the camera counter follows; their angles bend and straighten with each rep. [HAND]
+ * is a hand seen on its own (no body in view): its height, as a 0–180 "angle", rises and falls.
+ */
+enum class Joint { ELBOW, KNEE, HIP, HAND }
 
 /**
  * Counts reps from joint angles, frame by frame (degrees, any of them missing when not seen).
@@ -55,7 +58,9 @@ class RepDetector(
                 wentLow = false
             }
         }
-        val joint = followed ?: return false
+        val followedJoint = followed ?: return false
+        // Only a hand in view (shown close up): its rise and fall stands in for the joint.
+        val joint = if (angles[followedJoint] == null && angles[Joint.HAND] != null) Joint.HAND else followedJoint
         val track = tracks.getValue(joint)
         val now = track.smoothed ?: return false
         val (low, high) = track.range() ?: return false

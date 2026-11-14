@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     // AGP 9 compiles Kotlin itself, so no separate kotlin-android plugin.
     alias(libs.plugins.androidApplication)
@@ -17,8 +19,8 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         // The release workflow passes these from the tag (v1.2.3: 1.2.3, code 10203).
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 10000
-        versionName = (findProperty("versionName") as String?) ?: "1.0.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 10103
+        versionName = (findProperty("versionName") as String?) ?: "1.1.3"
     }
 
     // The release key, from the environment (the release workflow's secrets). Without it the
@@ -53,6 +55,11 @@ android {
         }
     }
 
+    // MediaPipe reads its models straight from the APK: they must stay uncompressed.
+    androidResources {
+        noCompress += "task"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -66,6 +73,45 @@ android {
 room {
     // Exported schemas are committed so database migrations can be checked later.
     schemaDirectory("$projectDir/schemas")
+}
+
+// The camera rep counter's MediaPipe models (Google, Apache 2.0): the heavy body model and the
+// hand model. Too big for git, so downloaded once into the build and packed into the app's assets.
+abstract class DownloadPoseModels : DefaultTask() {
+    @get:Input
+    abstract val models: MapProperty<String, String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun download() {
+        val dir = outputDir.get().asFile.apply { mkdirs() }
+        models.get().forEach { (name, url) ->
+            val file = File(dir, name)
+            if (file.length() > 0) return@forEach
+            val part = File(dir, "$name.part")
+            URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+            part.renameTo(file)
+        }
+    }
+}
+
+val poseModels = tasks.register<DownloadPoseModels>("downloadPoseModels") {
+    val base = "https://storage.googleapis.com/mediapipe-models"
+    models.set(
+        mapOf(
+            "pose_landmarker_heavy.task" to "$base/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task",
+            "hand_landmarker.task" to "$base/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+        ),
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/poseModels"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(poseModels, DownloadPoseModels::outputDir)
+    }
 }
 
 dependencies {
@@ -98,7 +144,7 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
-    implementation(libs.mlkit.pose.detection)
+    implementation(libs.mediapipe.tasks.vision)
     implementation(libs.vico.compose)
     implementation(libs.vico.compose.m3)
 

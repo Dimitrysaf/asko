@@ -38,9 +38,8 @@ import io.github.dimitrysaf.asko.theme.Metric
 import io.github.dimitrysaf.asko.theme.metricColor
 import java.time.LocalDate
 
-/** How tall a day's capsule is: in the month calendar, and in the week strip. */
+/** How tall a day's capsule is, in the month calendar and the week strip alike. */
 val DayCapsuleHeight = 48.dp
-val TallDayCapsuleHeight = 72.dp
 private val CapsuleWidth = 36.dp
 private val SelectedGap = 3.dp
 private val TodaySize = 24.dp
@@ -59,7 +58,7 @@ private const val TrackIconAlpha = 0.6f
  * the next. Other days are an empty track, a mark (sick, travelling) faint on
  * it. With [circleToday], today's number sits in a filled circle; the [selected] day is ringed;
  * days [muted] (outside the shown month) are only a faded number. [workoutDays] null means still
- * loading. [height]: [DayCapsuleHeight], or [TallDayCapsuleHeight] for the week strip.
+ * loading. [height]: [DayCapsuleHeight] by default.
  */
 @Composable
 fun DayRow(

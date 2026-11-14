@@ -1,5 +1,7 @@
 package io.github.dimitrysaf.asko.pages.settings
 
+import io.github.dimitrysaf.asko.data.repository.ExerciseRepository
+import io.github.dimitrysaf.asko.data.settings.UserLibrary
 import io.github.dimitrysaf.asko.data.importing.ImportCounts
 import io.github.dimitrysaf.asko.data.importing.WorkoutImporter
 
@@ -28,7 +30,55 @@ class SettingsViewModel(
     val settings: SettingsRepository,
     private val backups: BackupRepository,
     private val importer: WorkoutImporter,
+    private val exercises: ExerciseRepository,
 ) : ViewModel() {
+    /** A library being added (downloaded first). */
+    var addingLibrary by mutableStateOf(false)
+        private set
+
+    /** The last library link that couldn't be read; null when fine. */
+    var libraryFailed by mutableStateOf(false)
+        private set
+
+    /** Adds a library from a [url] to its JSON or CSV file (see LinkedLibraryApi); then [onAdded]. */
+    fun addLibrary(name: String, url: String, onAdded: () -> Unit) {
+        if (addingLibrary) return
+        addingLibrary = true
+        libraryFailed = false
+        viewModelScope.launch {
+            try {
+                exercises.addLibrary(name, url)
+                onAdded()
+            } catch (e: IOException) {
+                libraryFailed = true
+            } catch (e: IllegalArgumentException) {
+                libraryFailed = true // not a link at all
+            } finally {
+                addingLibrary = false
+            }
+        }
+    }
+
+    fun libraryErrorShown() {
+        libraryFailed = false
+    }
+
+    /** Removes a library you added; returns what puts it back (for Undo). */
+    fun removeLibrary(library: UserLibrary, then: (undo: () -> Unit) -> Unit) {
+        viewModelScope.launch {
+            exercises.removeLibrary(library)
+            then {
+                viewModelScope.launch {
+                    try {
+                        exercises.addLibrary(library.name, library.url)
+                    } catch (e: IOException) {
+                        libraryFailed = true
+                    }
+                }
+            }
+        }
+    }
+
     /** A backup or restore is running (its buttons wait). */
     var busy by mutableStateOf(false)
         private set

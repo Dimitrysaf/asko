@@ -71,6 +71,15 @@ class ExerciseCatalog(
         }
     }
 
+    /** It has been downloaded at some point (a copy is saved on the phone). */
+    val isSaved: Boolean get() = cache != null || file.exists()
+
+    /** Forgets the library: its saved copy and what's in memory (a library you removed). */
+    suspend fun delete() = mutex.withLock {
+        cache = null
+        withContext(Dispatchers.IO) { file.delete() }
+    }
+
     /** Writes to a temp file first, so a crash mid-write never leaves a half-written library. */
     private fun save(exercises: List<Exercise>) {
         val temp = File(file.path + ".tmp")

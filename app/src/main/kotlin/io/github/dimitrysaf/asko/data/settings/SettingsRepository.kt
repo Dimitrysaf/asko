@@ -5,6 +5,8 @@ import io.github.dimitrysaf.asko.lib.format.DistanceUnit
 import android.content.Context
 import androidx.core.content.edit
 import io.github.dimitrysaf.asko.data.model.ExerciseSource
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import io.github.dimitrysaf.asko.data.model.RestSchedule
 import io.github.dimitrysaf.asko.lib.format.WeightUnit
 import java.time.DayOfWeek
@@ -123,14 +125,17 @@ class SettingsRepository(context: Context) {
     /** Keep the screen on while a workout is open. */
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
+    private val _userLibraries = MutableStateFlow(readUserLibraries())
+
+    /** The libraries you added from a link, in the order you added them. */
+    val userLibraries: StateFlow<List<UserLibrary>> = _userLibraries.asStateFlow()
+
     private val _sourceOrder = MutableStateFlow(readSourceOrder())
 
     /** The exercise libraries, first to last: an exercise in more than one shows from the first. */
     val sourceOrder: StateFlow<List<ExerciseSource>> = _sourceOrder.asStateFlow()
 
-    private val _hiddenSources = MutableStateFlow(
-        prefs.getStringSet(HIDDEN_SOURCES, emptySet()).orEmpty().mapNotNull { name -> ExerciseSource.entries.firstOrNull { it.name == name } }.toSet(),
-    )
+    private val _hiddenSources = MutableStateFlow(readHiddenSources())
 
     /** Libraries whose exercises aren't browsed or searched (ones already in routines still show). */
     val hiddenSources: StateFlow<Set<ExerciseSource>> = _hiddenSources.asStateFlow()
@@ -143,20 +148,79 @@ class SettingsRepository(context: Context) {
     /** Hides or shows a library; the last one shown can't be hidden. */
     fun setSourceHidden(source: ExerciseSource, hidden: Boolean) {
         val next = if (hidden) _hiddenSources.value + source else _hiddenSources.value - source
-        if (next.size >= ExerciseSource.entries.size) return
-        prefs.edit { putStringSet(HIDDEN_SOURCES, next.map { it.name }.toSet()) }
-        _hiddenSources.value = next
+        if (_sourceOrder.value.all { it in next }) return
+        saveHidden(next)
     }
+
+    private fun saveHidden(hidden: Set<ExerciseSource>) {
+        prefs.edit { putStringSet(HIDDEN_SOURCES, hidden.map { it.name }.toSet()) }
+        _hiddenSources.value = hidden
+    }
+
+    /** Adds a library from a link: last in the order, shown. */
+    fun addUserLibrary(library: UserLibrary) {
+        val all = _userLibraries.value + library
+        saveUserLibraries(all)
+        setSourceOrder(_sourceOrder.value + library.source)
+    }
+
+    /** Removes a library you added (its downloaded copy is the repository's to delete). */
+    fun removeUserLibrary(library: UserLibrary) {
+        saveUserLibraries(_userLibraries.value - library)
+        setSourceOrder(_sourceOrder.value - library.source)
+        saveHidden(_hiddenSources.value - library.source)
+    }
+
+    private fun saveUserLibraries(all: List<UserLibrary>) {
+        prefs.edit { putString(USER_LIBRARIES, Json.encodeToString(all)) }
+        _userLibraries.value = all
+    }
+
+    private fun readUserLibraries(): List<UserLibrary> =
+        prefs.getString(USER_LIBRARIES, null)?.let { runCatching { Json.decodeFromString<List<UserLibrary>>(it) }.getOrNull() }.orEmpty()
+
+    /** Every library there is: the built-in ones and the ones you added. */
+    private fun allSources(): List<ExerciseSource> = ExerciseSource.BUILT_IN + _userLibraries.value.map { it.source }
 
     /**
      * As saved; libraries added since then go at the end, except your own exercises, which go
      * first (yours win over a library's exercise of the same name).
      */
     private fun readSourceOrder(): List<ExerciseSource> {
-        val saved = prefs.getString(SOURCE_ORDER, null).orEmpty().split(',')
-            .mapNotNull { name -> ExerciseSource.entries.firstOrNull { it.name == name } }
-        val added = ExerciseSource.entries.filterNot { it in saved }
+        val known = allSources()
+        val saved = prefs.getString(SOURCE_ORDER, null).orEmpty().split(',').filter { it.isNotEmpty() }
+            .map(::ExerciseSource).filter { it in known }
+        val added = known.filterNot { it in saved }
         return added.filter { it == ExerciseSource.CUSTOM } + saved + added.filterNot { it == ExerciseSource.CUSTOM }
+    }
+
+    /**
+     * As saved. wger starts hidden: on a new phone, and the first time an older version's
+     * settings are read (it wasn't in their order yet).
+     */
+    private fun readHiddenSources(): Set<ExerciseSource> {
+        val saved = prefs.getStringSet(HIDDEN_SOURCES, null)?.map(::ExerciseSource)?.toSet()
+        val savedOrder = prefs.getString(SOURCE_ORDER, null).orEmpty()
+        val wgerIsNew = saved == null || ExerciseSource.WGER.name !in savedOrder.split(',')
+        val hidden = saved.orEmpty() + (if (wgerIsNew) setOf(ExerciseSource.WGER) else emptySet())
+        if (hidden != saved) {
+            prefs.edit {
+                putStringSet(HIDDEN_SOURCES, hidden.map { it.name }.toSet())
+                // Remember wger as seen, so switching it on sticks.
+                putString(SOURCE_ORDER, _sourceOrder.value.joinToString(",") { it.name })
+            }
+        }
+        return hidden.filter { it in _sourceOrder.value }.toSet()
+    }
+
+    private val _hideDuplicates = MutableStateFlow(prefs.getBoolean(HIDE_DUPLICATES, true))
+
+    /** An exercise in more than one library shows once, from the first; off, every library's copy shows. */
+    val hideDuplicates: StateFlow<Boolean> = _hideDuplicates.asStateFlow()
+
+    fun setHideDuplicates(on: Boolean) {
+        prefs.edit { putBoolean(HIDE_DUPLICATES, on) }
+        _hideDuplicates.value = on
     }
 
     private val _restSchedule = MutableStateFlow(readRestSchedule())
@@ -238,5 +302,13 @@ class SettingsRepository(context: Context) {
         const val REST_SCHEDULE = "rest_schedule"
         const val STREAK_ASKED_THROUGH = "streak_asked_through"
         const val HIDDEN_SOURCES = "exercise_sources_hidden"
+        const val USER_LIBRARIES = "user_libraries"
+        const val HIDE_DUPLICATES = "hide_duplicates"
     }
+}
+
+/** A library you added: its [name] as you called it, and the [url] of its JSON file. */
+@Serializable
+data class UserLibrary(val id: String, val name: String, val url: String) {
+    val source: ExerciseSource get() = ExerciseSource.link(id)
 }
