@@ -87,3 +87,6 @@ JAVA_HOME=/opt/android-studio/jbr ./gradlew :app:installDebug
 ```
 
 `gradle.properties` caps Gradle at 4 workers and low CPU priority so builds don't freeze the desktop.
+
+This codebase was created by AI. 
+Some elements of the UI is handmade. 
